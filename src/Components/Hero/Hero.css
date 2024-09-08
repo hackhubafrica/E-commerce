@@ -1,0 +1,70 @@
+.hero {
+    min-height: 100vh; /* Use min-height for proper height scaling */
+    background: linear-gradient(180deg, #fde1ff, #e1ffea 60%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px; /* Add some padding for smaller screens */
+    box-sizing: border-box;
+}
+
+.hero-left, .hero-right {
+    flex: 1;
+    display: flex;
+    align-items: center;
+}
+
+.hero-left {
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    padding-left: 5%; /* Adjusted padding for responsiveness */
+    line-height: 1.1;
+}
+
+.hero-left h2 {
+    color: black;
+    font-size: 1.5rem; /* Use rem units for better scaling */
+    font-weight: 600;
+}
+
+.hero-left p {
+    color: black;
+    font-size: 2.5rem; /* Use rem units for better scaling */
+    font-weight: 300;
+}
+
+.hero-hand-icon {
+    display: flex;
+    align-items: center;
+    gap: 1rem; /* Use rem units for spacing */
+}
+
+.hero-hand-icon img {
+    width: 6.5rem; /* Use rem units for responsive images */
+}
+
+.hero-latest-btn {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem; /* Use rem units for spacing */
+    width: auto; /* Auto width to fit content */
+    padding: 0.5rem 1rem; /* Adjust padding for button */
+    border-radius: 75px;
+    margin-top: 1.5rem;
+    background: #ff4141;
+    color: #ffffff;
+    font-size: 1.4rem; /* Use rem units for font size */
+    font-weight: 500;
+}
+
+.hero-right {
+    justify-content: center;
+    align-items: center;
+}
+
+.hero-right img {
+    max-width: 100%; /* Ensure image scales with container */
+    height: auto; /* Maintain aspect ratio */
+}
