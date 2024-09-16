@@ -31,19 +31,6 @@ const storage  = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// // Configure multer storage
-// const storage = multer.diskStorage({
-//   destination: (req, file, cb) => {
-//     cb(null, './upload/images');
-//   },
-//   filename: (req, file, cb) => {
-//     cb(null, `${file.fieldname}_${Date.now()}${path.extname(file.originalname)}`);
-//   }
-// });
-
-// Create multer upload instance
-// const upload = multer({ storage: storage });
-
 app.use('/images', express.static('upload/images'));
 
 // Create Upload Endpoint for images
