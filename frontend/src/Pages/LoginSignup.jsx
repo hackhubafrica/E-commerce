@@ -1,5 +1,3 @@
-// dont touch this file
-
 import React from 'react'
 import "./CSS/LoginSignup.css"
 

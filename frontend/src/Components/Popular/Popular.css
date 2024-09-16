@@ -1,16 +1,11 @@
-.popular{
+.popular {
     display: flex;
-    flex-direction: column ;
+    flex-direction: column;
     align-items: center;
     gap: 20px;
-    height: 90vh;
-    width: -50px;
-}
-
-.popular h1{
-    color: black;
-    font-size: 50px;
-    font-weight: 500;
+    padding: auto;
+    margin-bottom: 100px;
+    
 }
 
 .popular hr{
@@ -21,17 +16,39 @@
 
 }
 
-.popular-item {
-    margin-top: 50px;
-    display: flex;
-    justify-content: flex-start; /* Align items to the start of the row */
-    gap: 30px; /* Space between items */
-    flex-wrap: wrap; /* Allow items to wrap onto the next line when needed */
-}
-
-.popular-item > * {
+.popular > img{
     width: 300px; /* Fixed width for the images */
     height: 300px; /* Fixed height for the images */
     box-sizing: border-box; /* Include padding and border in the element size */
     border: 10px solid white;
 }
+
+.popular h1 {
+    color: #141717;
+    font-size: 50px;
+    font-weight: 600;
+}
+
+.popular hr {
+    width: 200px;
+    height: 6px;
+    border-radius: 10px;
+    background: #014252;
+    border: none;
+}
+
+
+.popular-item {
+    background-color: #f5f5f5;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    max-width: 100%; 
+    margin-top: 50px;
+    display: flex;
+    justify-content: flex-start; 
+    gap: 30px; 
+    flex-wrap: wrap; 
+
+}
+

@@ -19,18 +19,22 @@
 
 .shopcategory-products{
     margin: 30px 170px;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr 1fr;
+    /* display: grid; */
+    /* grid-template-columns: 1fr 1fr 1fr 1fr; */
     row-gap: 110px;
+    background-color: white;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    max-width: 100%; 
+    margin-top: 50px;
+    display: flex;
+    justify-content: flex-start; 
+    gap: 60px; 
+    flex-wrap: wrap; 
+
 }
 
-
-.shopcategory-products > * {
-    width: 400px; /* Fixed width for the images */
-    height: 400px; /* Fixed height for the images */
-    box-sizing: border-box; /* Include padding and border in the element size */
-    border: 1px solid white;
-}
 
 
 .shopcategory-products > p{
