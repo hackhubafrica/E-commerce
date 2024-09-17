@@ -28,13 +28,12 @@ const storage  = multer.diskStorage({
     cb(null, `${file.fieldname}_${Date.now()}${path.extname(file.originalname)}`);
   }
 })
-
 const upload = multer({ storage: storage });
 
-app.use('/images', express.static('upload/images'));
-
 // Create Upload Endpoint for images
-app.post("/upload", upload.single('image'), (req, res) => {
+app.use('/images', express.static('upload/images'))
+
+app.post("/upload", upload.single('product'), (req, res) => {
   
   if (!req.file) {
     return res.status(400).json({ success: 0, message: "No file uploaded." });
@@ -43,8 +42,8 @@ app.post("/upload", upload.single('image'), (req, res) => {
   res.json({
     success: 1,
     image_url: `http://localhost:${port}/images/${req.file.filename}`
-  });
-});
+  })
+})
 
 
 
@@ -80,6 +79,7 @@ const Product = mongoose.model("Product", {
   },
 });
 
+
 // Schema for users
 const Users = mongoose.model('Users', {
   name: {
@@ -101,57 +101,47 @@ const Users = mongoose.model('Users', {
   }
 });
 
+
+
 // Add product endpoint
 app.post('/addproduct', async (req, res) => {
-  try {
     const product = new Product({
-      id: req.body.id,
-      name: req.body.name,
-      image: req.body.image,
-      category: req.body.category,
-      new_price: req.body.new_price,
-      old_price: req.body.old_price,
-    });
+    id:req.body.id,
+    name:req.body.name,
+    image:req.body.image,
+    category:req.body.category,
+    new_price:req.body.new_price,
+    old_price:req.body.old_price,
+  });
 
-    console.log(product);
-    await product.save();
-    console.log("Product Saved");
-    res.json({
-      success: true,
-      name: req.body.name,
-    });
-  } catch (error) {
-    console.log(error);
-    res.status(500).send("Server Error");
-  }
-});
+  console.log(product);
+  product.save();  //removed await
+  console.log("Product Saved");
+  res.json({
+    success: true,
+    name:req.body.name,
+  })
+})
+
+
 
 // Delete product endpoint
 app.post('/removeproduct', async (req, res) => {
-  try {
     await Product.findOneAndDelete({ id: req.body.id });
     console.log("Product Removed");
     res.json({
       success: true,
       message: "Product removed successfully"
-    });
-  } catch (error) {
-    console.log(error);
-    res.status(500).send("Server Error");
-  }
-});
+    })
+})
+
 
 // Get all products endpoint
 app.get('/allproducts', async (req, res) => {
-  try {
-    const products = await Product.find({});
+    let products = await Product.find({});
     console.log("All Products Fetched");
-    res.json(products);
-  } catch (error) {
-    console.log(error);
-    res.status(500).send("Server Error");
-  }
-});
+    res.send(products);
+})
 
 // Signup endpoint
 app.post('/signup', async (req, res) => {
