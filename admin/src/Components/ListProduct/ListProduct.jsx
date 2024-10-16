@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import './ListProduct.css'
 import cross_icon from '../../assets/cross_icon.png'
-const ListProduct = () => {
+
+
+const ListProduct = (products, setProducts) => {
 
     const [allproducts,setAllProducts] = useState ([]);
 
-    const fetchInfo = async () => {
+    const fetchInfo = async (id) => {
         await fetch ('http://localhost:4000/allproducts')
         .then((res) => res.json())
         .then((data)=>{setAllProducts(data)});
@@ -15,17 +17,6 @@ const ListProduct = () => {
         fetchInfo();
     },[])
 
-    // const remove_product = async  (id) =>{
-    //     await fetch ('http://localhost:4000/removeproduct',{
-    //         method: 'POST'
-    //         header: {
-    //             Accept: 'application/json'
-    //             'Content-Type':'application/json',
-    //         },
-    //         body:JSON.stringfy({id:id})
-    //     })
-    //     await fetchInfo();
-    // }
 
 
     const remove_product = async (id) => {
@@ -33,19 +24,23 @@ const ListProduct = () => {
         const response = await fetch('http://localhost:4000/removeproduct', {
             method: 'POST',
             headers: {
-                Accept: 'application/json',
+                // Accept: 'application/json',
                 'Content-Type': 'application/json' // Ensure this line is included if you send JSON
             },
             body: JSON.stringify({ id }), // Pass the id in the body
         });
 
+            if (response.ok) {
         const data = await response.json();
+        console.log(data.message);
 
-        if (data.success) {
-            alert("Product removed successfully");
+        // Update the frontend by removing the deleted product from the list
+        setProducts((prevProducts) => prevProducts.filter((product) => product._id !== id));
+        // if (data.success) {
+            // alert("Product removed successfully");
             // Optionally, refresh the list of products or update the state
         } else {
-            alert("Failed to remove product");
+            console.error('Failed to remove product:', response.statusText);
         }
     } catch (error) {
         console.error("Error removing product:", error);

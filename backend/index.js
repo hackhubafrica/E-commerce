@@ -163,49 +163,28 @@ app.post('/addproduct', async (req, res) => {
   }
 });
 
-// // Delete product endpoint
-// app.post('/removeproduct', async (req, res) => {
-//   console.log("POST request to /removeproduct with id:", req.body.id);
 
-//   try {
-//     const result = await Product.findOneAndDelete({ id: req.body.id });
-//     if (result) {
-//       console.log("Product removed successfully:", req.body.id);
-//       res.json({
-//         success: true,
-//         message: "Product removed successfully"
-//       });
-//     } else {
-//       console.error("Product not found:", req.body.id);
-//       res.status(404).json({ success: false, message: "Product not found." });
-//     }
-//   } catch (error) {
-//     console.error("Error removing product:", error);
-//     res.status(500).json({ success: false, message: "Error removing product." });
-//   }
-// });
-
-
+// Assuming you have already defined express, app, Product model, etc.
 app.post("/removeproduct", async (req, res) => {
-    console.log("POST request to /removeproduct with id:", req.body.id);
-    const { id } = req.body; // Make sure to extract the product ID from the request body
+  try {
+    const { id } = req.body;
 
-    if (!id) {
-        return res.status(400).json({ success: 0, message: "Product ID is required." });
+    // Validate if the provided ID is a valid ObjectId
+    if (!mongoose.isValidObjectId(id))  {
+      return res.status(400).json({ success: 0, message: "Invalid product ID format." });
     }
 
-    try {
-        const result = await Product.findByIdAndDelete(id); // Assuming you're using Mongoose
+    const product = await Product.findByIdAndDelete(id);
 
-        if (!result) {
-            return res.status(404).json({ success: 0, message: "Product not found." });
-        }
-
-        res.json({ success: 1, message: "Product removed successfully." });
-    } catch (error) {
-        console.error("Error removing product:", error);
-        res.status(500).json({ success: 0, message: "Error removing product." });
+    if (!product) {
+      return res.status(404).json({ success: 0, message: "Product not found." });
     }
+
+    res.json({ success: 1, message: "Product removed successfully." });
+  } catch (error) {
+    console.error("Error removing product:", error);
+    res.status(500).json({ success: 0, message: "Internal server error." });
+  }
 });
 
 
