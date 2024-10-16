@@ -35,18 +35,25 @@ app.get("/", (req, res) => {
   res.send("Hello, world! Express app is running");
 });
 
-// Image storage engine
+
+// Configure multer to store files in the desired directory
 const storage = multer.diskStorage({
-  destination: './upload/images',
+  destination: (req, file, cb) => {
+    cb(null, 'upload/images'); // specify the folder where you want to save files
+  },
   filename: (req, file, cb) => {
-    cb(null, `${file.fieldname}_${Date.now()}${path.extname(file.originalname)}`);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname)); // unique file name
   }
 });
-const upload = multer({ storage: storage });
 
-// Create Upload Endpoint for images
+// Initialize multer with the defined storage
+const upload = multer({ storage });
+
+// Serve static files from 'upload/images'
 app.use('/images', express.static('upload/images'));
 
+// Upload route
 app.post("/upload", upload.single('product'), (req, res) => {
   console.log("POST request to /upload");
 
@@ -63,7 +70,9 @@ app.post("/upload", upload.single('product'), (req, res) => {
 });
 
 // Schema for uploading products
-const Product = mongoose.model("Product", {
+// const Product = mongoose.model("Product", {
+
+const productSchema = new mongoose.Schema({
   id: {
     type: Number,
     required: true,
@@ -94,6 +103,9 @@ const Product = mongoose.model("Product", {
   },
 });
 
+
+const Product = mongoose.model('Product', productSchema);
+
 // Schema for users
 const Users = mongoose.model('Users', {
   name: {
@@ -118,9 +130,19 @@ const Users = mongoose.model('Users', {
 // Add product endpoint
 app.post('/addproduct', async (req, res) => {
   console.log("POST request to /addproduct with data:", req.body);
+  
+  const { name, image, category, new_price, old_price } = req.body;
+
+  // Validate product data
+  if (!name || !image || !category || !new_price) {
+    return res.status(400).json({ success: 0, message: "All fields are required." });
+  }
+
+  // Generate a unique ID
+  const productId = new Date().getTime().toString(); // Example of generating an ID
 
   const product = new Product({
-    id: req.body.id,
+    id: productId,
     name: req.body.name,
     image: req.body.image,
     category:req.body.category,
@@ -141,27 +163,51 @@ app.post('/addproduct', async (req, res) => {
   }
 });
 
-// Delete product endpoint
-app.post('/removeproduct', async (req, res) => {
-  console.log("POST request to /removeproduct with id:", req.body.id);
+// // Delete product endpoint
+// app.post('/removeproduct', async (req, res) => {
+//   console.log("POST request to /removeproduct with id:", req.body.id);
 
-  try {
-    const result = await Product.findOneAndDelete({ id: req.body.id });
-    if (result) {
-      console.log("Product removed successfully:", req.body.id);
-      res.json({
-        success: true,
-        message: "Product removed successfully"
-      });
-    } else {
-      console.error("Product not found:", req.body.id);
-      res.status(404).json({ success: false, message: "Product not found." });
+//   try {
+//     const result = await Product.findOneAndDelete({ id: req.body.id });
+//     if (result) {
+//       console.log("Product removed successfully:", req.body.id);
+//       res.json({
+//         success: true,
+//         message: "Product removed successfully"
+//       });
+//     } else {
+//       console.error("Product not found:", req.body.id);
+//       res.status(404).json({ success: false, message: "Product not found." });
+//     }
+//   } catch (error) {
+//     console.error("Error removing product:", error);
+//     res.status(500).json({ success: false, message: "Error removing product." });
+//   }
+// });
+
+
+app.post("/removeproduct", async (req, res) => {
+    console.log("POST request to /removeproduct with id:", req.body.id);
+    const { id } = req.body; // Make sure to extract the product ID from the request body
+
+    if (!id) {
+        return res.status(400).json({ success: 0, message: "Product ID is required." });
     }
-  } catch (error) {
-    console.error("Error removing product:", error);
-    res.status(500).json({ success: false, message: "Error removing product." });
-  }
+
+    try {
+        const result = await Product.findByIdAndDelete(id); // Assuming you're using Mongoose
+
+        if (!result) {
+            return res.status(404).json({ success: 0, message: "Product not found." });
+        }
+
+        res.json({ success: 1, message: "Product removed successfully." });
+    } catch (error) {
+        console.error("Error removing product:", error);
+        res.status(500).json({ success: 0, message: "Error removing product." });
+    }
 });
+
 
 // Get all products endpoint
 app.get('/allproducts', async (req, res) => {
