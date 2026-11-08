@@ -1,8 +1,9 @@
 # Jotform, Payments, and Pickup-Point Setup
 
-The storefront redirects customers to the Jotform master form. Jotform submits
-the order to the Cloudflare Worker, which stores it in Supabase and starts an
-M-Pesa STK Push when that payment method is selected.
+The storefront's card checkout now uses the backend and Stripe Checkout.
+Jotform-to-Worker is the legacy M-Pesa flow only: Jotform submits the order to
+the Cloudflare Worker, which stores it in Supabase and starts an M-Pesa STK Push.
+It is not connected to the Stripe cart or MongoDB's authoritative product prices.
 
 ## 1. Configure the order database
 

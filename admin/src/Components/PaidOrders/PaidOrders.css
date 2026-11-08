@@ -1,0 +1,76 @@
+.paid-orders {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 28px;
+}
+
+.paid-orders > header,
+.paid-order-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.paid-orders h1 {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 32px);
+}
+
+.paid-orders header p {
+  max-width: 760px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.paid-orders header button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 4px;
+  background: #ff4141;
+  color: #fff;
+  font-weight: 600;
+}
+
+.paid-orders-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.paid-order-card {
+  padding: 20px;
+  border: 1px solid #e6e6e6;
+  border-radius: 8px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.paid-order-heading h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.paid-order-card > p {
+  color: #555;
+}
+
+.paid-order-card ul {
+  padding-left: 20px;
+  line-height: 1.7;
+}
+
+.paid-order-warning {
+  color: #8c4d00 !important;
+}
+
+@media (max-width: 600px) {
+  .paid-orders {
+    padding: 16px;
+  }
+
+  .paid-orders > header {
+    flex-direction: column;
+  }
+}

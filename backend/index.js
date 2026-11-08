@@ -7,15 +7,27 @@ const fs = require("fs");
 const { randomBytes } = require("node:crypto");
 const cors = require("cors");
 const { rateLimit } = require("express-rate-limit");
+const Stripe = require("stripe");
+const firebaseAdmin = require("firebase-admin");
 const { hashPassword, verifyPassword } = require("./auth-utils");
 const { createAdminAuth, verifyAdminCredentials } = require("./admin-auth");
+const { createStripeCheckoutHandlers } = require("./stripe-checkout");
+const { createCJClient } = require("./cj-catalog");
+const { createFirebaseLoginHandler } = require("./firebase-auth");
 
 const port = Number(process.env.PORT) || 4000;
 const app = express();
 const uploadDirectory = path.join(__dirname, "upload", "images");
 fs.mkdirSync(uploadDirectory, { recursive: true });
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({
+  limit: "1mb",
+  verify(req, res, buffer) {
+    if (req.originalUrl.startsWith("/api/payments/stripe/webhook")) {
+      req.rawBody = Buffer.from(buffer);
+    }
+  },
+}));
 const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:4321")
   .split(",")
   .map((origin) => origin.trim())
@@ -33,10 +45,33 @@ app.use(
 
 const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/e-commerce";
 const jwtSecret = process.env.JWT_SECRET;
+let firebaseAuth = null;
+if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+  try {
+    const serviceAccount = JSON.parse(
+      Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64").toString("utf8"),
+    );
+    if (!firebaseAdmin.apps.length) {
+      firebaseAdmin.initializeApp({
+        credential: firebaseAdmin.credential.cert(serviceAccount),
+      });
+    }
+    firebaseAuth = firebaseAdmin.auth();
+  } catch (error) {
+    throw new Error(`FIREBASE_SERVICE_ACCOUNT_BASE64 is invalid: ${error.message}`);
+  }
+}
 const requireAdmin = createAdminAuth(jwt, jwtSecret);
 const adminLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { success: false, error: "Too many sign-in attempts. Try again later." },
+});
+const providerLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 15,
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: { success: false, error: "Too many sign-in attempts. Try again later." },
@@ -48,12 +83,27 @@ const customerLoginLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, error: "Too many sign-in attempts. Try again later." },
 });
+
 const signupLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 10,
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: { success: false, error: "Too many sign-up attempts. Try again later." },
+});
+const checkoutLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { success: false, error: "Too many checkout attempts. Try again later." },
+});
+const orderLookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { success: false, error: "Too many order lookup attempts. Try again later." },
 });
 
 mongoose.connect(uri)
@@ -145,7 +195,7 @@ const productSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ["women", "men", "kid"],
+    enum: ["women", "men", "kid", "office", "home", "pets", "beauty", "travel", "fitness"],
     required: true,
   },
   new_price: {
@@ -164,8 +214,19 @@ const productSchema = new mongoose.Schema({
     type: Boolean,
     default: true,
   },
+  supplier: {
+    type: String,
+    enum: ["manual", "cj"],
+    default: "manual",
+  },
+  supplierProductId: String,
+  supplierVariantId: String,
+  supplierVariantSku: String,
+  supplierSku: String,
+  supplierCost: Number,
 });
 
+productSchema.index({ supplierProductId: 1 }, { unique: true, sparse: true });
 
 const Product = mongoose.model('Product', productSchema);
 
@@ -177,6 +238,17 @@ const Users = mongoose.model('Users', {
   email: {
     type: String,
     unique: true,
+    sparse: true,
+  },
+  phone: {
+    type: String,
+    unique: true,
+    sparse: true,
+  },
+  firebaseUid: {
+    type: String,
+    unique: true,
+    sparse: true,
   },
   password: {
     type: String,
@@ -218,6 +290,8 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  productSubtotal: Number,
+  shippingAmount: Number,
   currency: {
     type: String,
     default: 'USD',
@@ -227,11 +301,27 @@ const orderSchema = new mongoose.Schema({
     enum: ['pending', 'completed', 'failed', 'cancelled'],
     default: 'pending',
   },
+  paymentProvider: {
+    type: String,
+    enum: ["stripe", "jotform", "daraja"],
+  },
+  paymentStatus: {
+    type: String,
+    enum: ["pending", "paid", "failed"],
+    default: "pending",
+  },
+  fulfillmentStatus: {
+    type: String,
+    enum: ["awaiting_payment", "awaiting_supplier_review", "submitted", "fulfilled", "not_submitted"],
+    default: "awaiting_payment",
+  },
+  stripeCheckoutSessionId: String,
+  paymentIntentId: String,
   transactionReference: {
     type: String,
   },
   items: {
-    type: Object, // cartItems mapping productId -> quantity
+    type: mongoose.Schema.Types.Mixed,
     default: {},
   },
   submissionId: {
@@ -245,6 +335,145 @@ const orderSchema = new mongoose.Schema({
 
 const Order = mongoose.model('Order', orderSchema);
 
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
+const stripeHandlers = createStripeCheckoutHandlers({
+  stripe,
+  Product,
+  Order,
+  config: {
+    stripeSecretKey: process.env.STRIPE_SECRET_KEY,
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    allowedShippingCountries: process.env.STRIPE_ALLOWED_SHIPPING_COUNTRIES,
+    shippingAmountCents: process.env.STRIPE_SHIPPING_AMOUNT_CENTS,
+    shippingLabel: process.env.STRIPE_SHIPPING_LABEL,
+    storefrontUrl: process.env.PUBLIC_STOREFRONT_URL || "http://localhost:4321",
+  },
+  checkSupplierAvailability: async (items, countryCode) => {
+    const checkedProducts = new Map();
+    for (const item of items.filter((cartItem) => cartItem.supplier === "cj")) {
+      if (!checkedProducts.has(item.supplierProductId)) {
+        const variants = await cjClient.getProductVariants(item.supplierProductId, countryCode);
+        checkedProducts.set(item.supplierProductId, variants);
+      }
+      const variant = checkedProducts.get(item.supplierProductId)
+        .find((candidate) => candidate.id === item.supplierVariantId);
+      if (!variant || variant.inventory < item.quantity) {
+        throw new Error(`${item.name} is not currently available in the selected country.`);
+      }
+      if (variant.cost > item.unitAmount / 100) {
+        throw new Error(`${item.name} supplier price has increased. The store must review its retail price.`);
+      }
+    }
+  },
+});
+const cjClient = createCJClient({ apiKey: process.env.CJ_API_KEY });
+
+app.post("/api/checkout/stripe", checkoutLimiter, stripeHandlers.createCheckout);
+app.post("/api/payments/stripe/webhook", stripeHandlers.stripeWebhook);
+
+app.get("/admin/cj/products", requireAdmin, async (req, res) => {
+  try {
+    const products = await cjClient.searchProducts(req.query.q);
+    return res.json({ success: true, products });
+  } catch (error) {
+    const status = error.message.includes("search term") ? 400 : 502;
+    return res.status(status).json({ success: false, error: error.message });
+  }
+});
+
+app.get("/admin/cj/products/:productId/variants", requireAdmin, async (req, res) => {
+  try {
+    const variants = await cjClient.getProductVariants(req.params.productId, req.query.countryCode);
+    return res.json({ success: true, variants });
+  } catch (error) {
+    const status = error.message.includes("Choose a valid") ? 400 : 502;
+    return res.status(status).json({ success: false, error: error.message });
+  }
+});
+
+app.post("/admin/cj/import", requireAdmin, async (req, res) => {
+  const supplierProductId = String(req.body.supplierProductId || "").trim();
+  const supplierVariantId = String(req.body.supplierVariantId || "").trim();
+  const retailPrice = Number(req.body.new_price);
+  const category = String(req.body.category || "");
+  if (!supplierProductId || !supplierVariantId || !Number.isFinite(retailPrice) || retailPrice <= 0
+    || !["women", "men", "kid", "office", "home", "pets", "beauty", "travel", "fitness"].includes(category)) {
+    return res.status(400).json({ success: false, error: "Select a valid product, category, and retail price." });
+  }
+
+  try {
+    const source = cjClient.getCachedProduct(supplierProductId);
+    if (!source) {
+      return res.status(404).json({ success: false, error: "Search for that CJ item again before importing it." });
+    }
+    const variant = cjClient.getCachedVariant(supplierProductId, supplierVariantId);
+    if (!variant) {
+      return res.status(404).json({ success: false, error: "Load this product's variants again before importing it." });
+    }
+    if (variant.inventory < 1) {
+      return res.status(409).json({ success: false, error: "CJ currently reports no inventory for this variant." });
+    }
+    const alreadyImported = await Product.findOne({ supplierProductId }).lean();
+    if (alreadyImported) {
+      return res.status(409).json({ success: false, error: "This CJ product is already in your catalog." });
+    }
+    const product = await Product.create({
+      id: Date.now(),
+      name: source.name,
+      image: source.image,
+      category,
+      new_price: retailPrice,
+      old_price: retailPrice,
+      supplier: "cj",
+      supplierProductId: source.id,
+      supplierVariantId: variant.id,
+      supplierVariantSku: variant.sku,
+      supplierSku: source.sku,
+      supplierCost: variant.cost,
+    });
+    return res.status(201).json({ success: true, product: product.toObject() });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({ success: false, error: "This CJ product is already in your catalog." });
+    }
+    console.error("Could not import product from CJ:", error);
+    return res.status(502).json({ success: false, error: "CJ product import failed. Check the supplier API configuration." });
+  }
+});
+
+app.get("/admin/orders/paid", requireAdmin, async (req, res) => {
+  try {
+    const orders = await Order.find({
+      paymentStatus: "paid",
+      fulfillmentStatus: "awaiting_supplier_review",
+    })
+      .sort({ createdAt: 1 })
+      .limit(50)
+      .lean();
+    return res.json({
+      success: true,
+      orders: orders.map((order) => ({
+        orderId: order.orderId,
+        customerName: order.customerName,
+        customerEmail: order.customerEmail,
+        customerPhone: order.customerPhone,
+        customerAddress: order.customerAddress,
+        orderTotal: order.orderTotal,
+        productSubtotal: order.productSubtotal,
+        shippingAmount: order.shippingAmount,
+        currency: order.currency,
+        items: order.items,
+        createdAt: order.createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error("Could not retrieve paid orders for review:", error);
+    return res.status(500).json({ success: false, error: "Unable to load paid orders." });
+  }
+});
+
 // Add product endpoint
 app.post("/addproduct", requireAdmin, async (req, res) => {
   const name = String(req.body.name || "").trim();
@@ -253,7 +482,7 @@ app.post("/addproduct", requireAdmin, async (req, res) => {
   const oldPrice = Number(req.body.old_price);
   if (
     !name || name.length > 160 || !image
-    || !["women", "men", "kid"].includes(category)
+    || !["women", "men", "kid", "office", "home", "pets", "beauty", "travel", "fitness"].includes(category)
     || !Number.isFinite(newPrice) || newPrice <= 0
     || !Number.isFinite(oldPrice) || oldPrice < newPrice
   ) {
@@ -310,6 +539,45 @@ app.get("/allproducts", async (req, res) => {
   } catch (error) {
     console.error("Error fetching products:", error);
     res.status(500).send("Server Error");
+  }
+});
+
+app.get("/api/shipping/countries", (req, res) => {
+  const countries = String(process.env.STRIPE_ALLOWED_SHIPPING_COUNTRIES || "")
+    .split(",")
+    .map((country) => country.trim().toUpperCase())
+    .filter((country) => /^[A-Z]{2}$/.test(country));
+  return res.json({ success: true, countries: [...new Set(countries)] });
+});
+
+app.get("/api/orders/:orderId", orderLookupLimiter, async (req, res) => {
+  const orderId = String(req.params.orderId || "").trim();
+  const email = String(req.query.email || "").trim().toLowerCase();
+  if (!orderId || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ success: false, error: "Enter the order reference and checkout email." });
+  }
+  try {
+    const order = await Order.findOne({ orderId, customerEmail: email }).lean();
+    if (!order) {
+      return res.status(404).json({ success: false, error: "Order reference or email was not recognized." });
+    }
+    return res.json({
+      success: true,
+      order: {
+        order_id: order.orderId,
+        status: order.status,
+        order_total: order.orderTotal,
+        product_subtotal: order.productSubtotal,
+        shipping_amount: order.shippingAmount,
+        currency: order.currency,
+        delivery_status: order.fulfillmentStatus || "pending",
+        pickup_station: null,
+        payment_provider: order.paymentProvider,
+      },
+    });
+  } catch (error) {
+    console.error("Could not retrieve order status:", error);
+    return res.status(500).json({ success: false, error: "Unable to look up this order right now." });
   }
 });
 
@@ -468,6 +736,12 @@ app.post('/login', customerLoginLimiter, async (req, res) => {
     res.status(500).json({ success: false, errors: "Unable to log in right now." });
   }
 });
+
+app.post(
+  "/auth/firebase",
+  providerLoginLimiter,
+  createFirebaseLoginHandler({ firebaseAuth, Users, jwt, jwtSecret }),
+);
 
 
 

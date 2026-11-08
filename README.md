@@ -7,7 +7,7 @@ E-Commerce Platform is a full-featured web application designed to facilitate on
 ## Features
 
 - Browse a sample clothing catalog by category and view product pages.
-- Add products from the API-backed catalog to a browser-side cart and redirect to the configured Jotform checkout.
+- Add products from the API-backed catalog to a browser-side cart and pay by card through Stripe Checkout.
 - Includes a separate React/Vite admin dashboard for managing catalog products.
 - Build the storefront as static Astro routes with the React storefront hydrated as an island.
 
@@ -102,6 +102,18 @@ On the storefront, open **Log in**, then **Create one** to register. Account
 data is stored in MongoDB; new passwords are hashed. Existing accounts created
 before password hashing are upgraded on successful login.
 
+Optional phone and social sign-in use Firebase Authentication. Set the four
+`PUBLIC_FIREBASE_*` values in `frontend/.env` from the Firebase web app config;
+these values are public client configuration, not service-account credentials.
+Enable Phone, Google, Facebook, and/or Apple in Firebase Authentication and
+configure each provider's credentials and authorized domains there. Phone
+sign-in uses Firebase's reCAPTCHA and SMS verification and may incur SMS
+charges. For backend token verification, provide the Firebase service-account
+JSON as a single-line base64 value in the backend-only
+`FIREBASE_SERVICE_ACCOUNT_BASE64` setting. Never expose that value in the
+frontend. Without this backend setting, email/password login continues to work
+and Firebase sign-in is unavailable.
+
 ### Admin access and product uploads
 
 Open the admin app at [http://localhost:5173](http://localhost:5173), then log
@@ -110,57 +122,74 @@ single-admin local setup; it does not create administrator accounts in the
 customer sign-up system. Admin product writes require the API-issued admin JWT.
 
 Products saved in MongoDB appear in the storefront catalog after its catalog
-request succeeds. Product images are stored under `backend/upload/images/`;
+request succeeds. You can upload products manually or search/import a product
+from CJ in **Add Products** after configuring `CJ_API_KEY` in the backend.
+Supplier credentials stay on the backend. Imported supplier cost is shown to
+the admin, who must choose the retail price. CJ imports are snapshots: current
+catalog prices are not periodically synchronized. Before Stripe Checkout, the
+backend rechecks the selected variant's inventory and supplier cost for the
+customer's destination country. Imported products still need a configured
+shipping price and manual supplier review before fulfillment.
+Product images uploaded manually are stored under `backend/upload/images/`;
 that local folder is ignored by Git. A production deployment must use durable
-object storage for images rather than an ephemeral server disk, configure
-`PUBLIC_API_URL` to the public API origin, and use HTTPS.
+object storage for images, configure `PUBLIC_API_URL` and
+`PUBLIC_STOREFRONT_URL`, and use HTTPS.
 
-### M-Pesa payments and the missing STK prompt
+### Card payments with Stripe
 
-**The payment pipeline has not been verified against Safaricom and should not
-yet be treated as working for real payments.** The automated Worker test
-simulates Daraja responses; it does not send an actual STK prompt. An STK request
-is started only after Jotform submits the order to the deployed Cloudflare
-Worker with the exact payment option `M-Pesa STK Push`, a valid Kenyan phone
-number, and all required Worker secrets. Starting the local storefront and API
-does not start the payment Worker.
+The storefront creates a Stripe-hosted Checkout Session through the backend.
+The backend fetches current MongoDB product prices and builds the amount itself;
+the browser's cart total is only an estimate. Card numbers go directly to
+Stripe. Set these **backend-only** settings from Stripe's test-mode dashboard:
 
-Storefront prices are displayed in USD. The checkout sends a `currency=USD`
-prefill, and the Worker will now refuse to send a USD order to Daraja unless
-`MPESA_USD_TO_KES_RATE` is configured; when configured, it rounds the converted
-amount to whole KES and records that amount for tracking. This is a manually
-maintained rate, not a live FX quote. Prefer pricing in KES for a Kenya-first
-store, or set and regularly update an agreed conversion rate before sandbox
-testing.
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_ALLOWED_SHIPPING_COUNTRIES` (comma-separated ISO country codes you
+  actually serve)
+- `STRIPE_SHIPPING_AMOUNT_CENTS` and `STRIPE_SHIPPING_LABEL` (the flat shipping
+  charge displayed by Stripe; configure a rate you have actually verified)
+- `PUBLIC_STOREFRONT_URL`
 
-The Worker still receives totals/items from a Jotform submission; those values
-must be verified against a trusted server-side order before real charges. Do
-not accept live payments until the Jotform/Worker flow is tested end to end,
-the submitted order amount is verified, and Safaricom confirms the callback.
+For local testing, use the Stripe CLI to forward
+`/api/payments/stripe/webhook` to the local API and use the webhook secret it
+prints. The endpoint verifies Stripe signatures and only marks an order paid
+when Stripe reports a successful payment with the exact stored amount and
+currency. The admin **Paid orders** list only contains these confirmed orders.
+It is a review queue; placing an order with CJ is deliberately not automatic.
+Before supplier ordering is automated, configure product variants, a supported
+shipping method, destination validation, inventory checks, and an explicit
+supplier-account payment policy.
 
-To investigate a missing sandbox prompt:
+Stripe Checkout and CJ can be developed without Shopify. A self-hosted site
+does not make the business cost-free: payment processing, supplier products
+and shipping, customs/taxes, and possibly a domain, hosting, database, SMS, or
+email provider can incur charges. Stripe merchant onboarding and available
+payment methods depend on the merchant's country and account eligibility.
 
-1. Confirm the Jotform payment option's exact text is `M-Pesa STK Push` and that
-   the form sends the customer's phone number and order total.
-2. Confirm Jotform's webhook points to the deployed Worker URL ending in
-   `/api/webhook`.
-3. In Cloudflare, check Worker logs immediately after submitting the form.
-   Look for `Daraja STK Push error`, missing-setting errors, an invalid phone
-   number, or a Daraja response without `CheckoutRequestID`.
-4. Verify the Worker has sandbox credentials and matching shortcode/passkey,
-   Supabase URL/service-role secret, public HTTPS callback URL, and the correct
-   `WORKER_URL`. For USD checkout totals, set `MPESA_USD_TO_KES_RATE` to the
-   sandbox conversion you intend to use. Use a Daraja sandbox test phone
-   supported by the configured sandbox account.
-5. Confirm the Worker can reach Supabase and that `supabase-schema.sql` has
-   been applied. A saved order alone does not mean Daraja accepted the STK
-   request.
+### CJ Dropshipping
 
-The Worker marks payment completed only when a successful Daraja callback
-arrives, Daraja's STK Query confirms the result, and the callback amount matches
-the expected amount. Card payments remain pending until a trusted card-payment
-confirmation is connected. See [JOTFORM_SETUP.md](./JOTFORM_SETUP.md) for
-Worker and Jotform setup details. Never put Daraja or Supabase secrets in `frontend/.env`:
+The admin can search and import CJ catalog entries using the backend's
+`CJ_API_KEY`. Create an API key in CJ and set it only in `backend/.env` or the
+backend host's secret store. The [CJ API docs](https://developers.cjdropshipping.com/)
+describe token authentication, catalog search, inventory queries, order
+creation, and shipping workflows. This project's current CJ integration only
+searches/imports products and checks variant stock/cost for the selected
+destination immediately before checkout. It does not periodically sync the
+catalog, calculate the supplier's shipping price, or place supplier orders.
+
+### M-Pesa and account options
+
+The old Jotform/Cloudflare Worker M-Pesa route is separate from Stripe and has
+not been connected to the new server-priced cart checkout. Do not accept
+production M-Pesa orders until the Worker validates product IDs, quantities,
+and totals against trusted catalog data and the Safaricom sandbox flow has been
+tested end-to-end.
+
+Customer login supports email/password and optional Firebase phone, Google,
+Facebook, and Apple sign-in. These options require Firebase/provider setup as
+described above; no provider credentials are included in the repository.
+
+Never put Stripe, Daraja, CJ, or Supabase secrets in `frontend/.env`:
 `PUBLIC_*` values are visible to everyone using the site.
 
 Run local checks with:
@@ -168,19 +197,24 @@ Run local checks with:
 npm test
 npm run build
 ```
-These checks use mocks; they do not prove MongoDB, Jotform, Supabase,
-Cloudflare, or Safaricom integrations are working.
+These checks use mocks; they do not prove MongoDB, Stripe, CJ, Jotform,
+Supabase, Cloudflare, or Safaricom integrations are working.
 
 ## API routes
 
 The Express API listens on port `4000` after MongoDB connects:
 
-- **POST `/signup`** and **POST `/login`**: customer authentication
+- **POST `/signup`** and **POST `/login`**: email/password customer authentication
+- **POST `/auth/firebase`**: verify a Firebase ID token and issue the store's
+  customer JWT; requires backend Firebase service-account configuration
 - **POST `/admin/login`** and **GET `/admin/session`**: configured admin login/session check
 - **GET `/allproducts`**, **POST `/addproduct`**, **POST `/removeproduct`**,
   **POST `/upload`**: product catalog; write routes require an admin token
-- **POST `/api/order`**: legacy MongoDB order hook; active checkout uses the
-  Cloudflare Worker and Supabase instead.
+- **POST `/api/checkout/stripe`**: create a card Checkout Session using current MongoDB prices
+- **POST `/api/payments/stripe/webhook`**: verify and process Stripe payment events
+- **GET `/admin/cj/products`** and **POST `/admin/cj/import`**: server-side CJ catalog search/import; require admin token
+- **GET `/admin/orders/paid`**: confirmed Stripe orders awaiting manual supplier review; requires admin token
+- **POST `/api/order`**: legacy MongoDB Jotform webhook; do not use for card payments.
 
 The storefront loads admin-managed products from the MongoDB API and retains
 the bundled sample catalog as a fallback. The cart is held in browser memory
@@ -215,9 +249,11 @@ For any questions, please reach out to [crimsonsummer81@gmail.com](crimsonsummer
 
 ## Payment and delivery status
 
-The Cloudflare Worker stores Jotform orders in Supabase and starts the Daraja STK Push flow. It checks successful callbacks against Daraja's STK Query result and expected M-Pesa amount before marking an order completed. A missing/mismatched amount remains pending for investigation. Card orders remain pending until a trusted card-payment confirmation is integrated; a Jotform submission or selected payment method alone does not confirm payment. The live Safaricom integration and trusted server-side order-price verification still require end-to-end testing before real charges.
+The Cloudflare Worker stores Jotform orders in Supabase and starts the Daraja STK Push flow. It checks successful callbacks against Daraja's STK Query result and expected M-Pesa amount before marking an order completed. A missing/mismatched amount remains pending for investigation. Stripe card orders are created in MongoDB and marked paid only by a matching, signature-verified Stripe webhook. The live Stripe, Safaricom, and supplier integrations still require sandbox testing before real orders.
 
-Customers may provide a preferred pickup point at checkout and change it through `/track` until the order is ready. This is a manual workflow: there is no courier, live pickup-station directory, dispatch integration, or automatic shipment scan feed in this repository yet.
+The legacy M-Pesa tracking flow supports a manually entered pickup point.
+Stripe orders collect a shipping address but do not yet have courier dispatch,
+a live pickup-station directory, carrier integration, or shipment scan feed.
 
 ---
 

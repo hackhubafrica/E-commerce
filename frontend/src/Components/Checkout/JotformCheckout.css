@@ -35,7 +35,8 @@
   font-weight: 600;
 }
 
-.checkout-card input {
+.checkout-card input,
+.checkout-card select {
   width: 100%;
   min-height: 52px;
   padding: 0 14px;
@@ -57,6 +58,16 @@
   color: #fff;
   font-weight: 700;
   cursor: pointer;
+}
+
+.checkout-card button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.checkout-note {
+  margin: 0;
+  font-size: 13px;
 }
 
 .checkout-back,

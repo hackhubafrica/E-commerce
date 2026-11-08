@@ -1,6 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import LoginSignup from './LoginSignup';
+import { confirmPhoneCode, requestPhoneCode } from '../auth-providers';
+
+jest.mock('../auth-providers', () => ({
+  confirmPhoneCode: jest.fn(),
+  isFirebaseConfigured: () => true,
+  requestPhoneCode: jest.fn(),
+  signInWithProvider: jest.fn(),
+}));
 
 afterEach(() => {
   jest.restoreAllMocks();
@@ -79,4 +87,32 @@ test('network failures show a helpful account-service message', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent(
     'Unable to reach the account service. Please try again later.',
   );
+});
+
+test('phone sign-in sends an OTP and verifies it before completing login', async () => {
+  const confirmation = { confirm: jest.fn() };
+  const verifier = { clear: jest.fn() };
+  requestPhoneCode.mockResolvedValue({ confirmation, verifier });
+  confirmPhoneCode.mockResolvedValue();
+  render(
+    <MemoryRouter>
+      <LoginSignup />
+    </MemoryRouter>,
+  );
+
+  fireEvent.click(screen.getByRole('button', { name: 'Continue with phone' }));
+  fireEvent.change(screen.getByPlaceholderText('+254712345678'), {
+    target: { value: '+254712345678' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Send phone code' }));
+
+  expect(await screen.findByRole('status')).toHaveTextContent('A verification code has been sent');
+  expect(requestPhoneCode).toHaveBeenCalledWith('+254712345678');
+  fireEvent.change(screen.getByPlaceholderText('Six-digit SMS code'), {
+    target: { value: '123456' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Verify and sign in' }));
+
+  await waitFor(() => expect(confirmPhoneCode).toHaveBeenCalledWith(confirmation, '123456', verifier));
+  expect(await screen.findByRole('status')).toHaveTextContent('You are now signed in.');
 });

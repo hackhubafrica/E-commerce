@@ -1,3 +1,7 @@
+.add-product-page {
+    width: 100%;
+}
+
 .add-product{
     box-sizing: border-box;
     width: 100%;
@@ -8,6 +12,122 @@
     background: white;
 }   
 
+.cj-importer {
+    box-sizing: border-box;
+    max-width: 860px;
+    margin: 20px 30px 0;
+    padding: 28px;
+    border: 1px solid #e6e6e6;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.cj-importer h2 {
+    margin: 0 0 8px;
+}
+
+.cj-importer > p {
+    color: #666;
+}
+
+.cj-search {
+    display: flex;
+    gap: 10px;
+    margin: 18px 0;
+}
+
+.cj-search input,
+.cj-importer select,
+.cj-result input {
+    box-sizing: border-box;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid #aaa;
+    border-radius: 4px;
+    font: inherit;
+}
+
+.cj-search input {
+    flex: 1;
+    min-width: 0;
+}
+
+.cj-search button,
+.cj-result button {
+    min-height: 44px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 4px;
+    background: #ff4141;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cj-search button:disabled {
+    cursor: wait;
+    opacity: .7;
+}
+
+.cj-importer > label,
+.cj-result label {
+    display: block;
+    margin: 12px 0 6px;
+    color: #555;
+}
+
+.cj-importer select {
+    width: 100%;
+    max-width: 300px;
+}
+
+.cj-results {
+    display: grid;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.cj-result {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 16px;
+    padding: 14px;
+    border: 1px solid #eee;
+    border-radius: 6px;
+}
+
+.cj-result > img {
+    width: 112px;
+    height: 112px;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.cj-result h3 {
+    margin: 0;
+}
+
+.cj-result p {
+    color: #666;
+}
+
+.cj-result input {
+    display: block;
+    width: 180px;
+    margin: 0 0 10px;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 
 .addproduct-itemfield{
     width: 100%;
@@ -88,6 +208,25 @@
 }
 
 @media (max-width: 600px) {
+    .cj-importer {
+        margin: 16px;
+        padding: 20px;
+    }
+
+    .cj-search {
+        flex-direction: column;
+    }
+
+    .cj-result {
+        grid-template-columns: 76px minmax(0, 1fr);
+        gap: 10px;
+    }
+
+    .cj-result > img {
+        width: 76px;
+        height: 76px;
+    }
+
     .add-product {
         margin: 16px;
         padding: 24px;

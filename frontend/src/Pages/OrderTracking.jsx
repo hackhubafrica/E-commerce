@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './CSS/OrderTracking.css';
-import { WORKER_URL } from '../config';
+import { API_URL, WORKER_URL } from '../config';
 
 const OrderTracking = () => {
   const [orderId, setOrderId] = useState('');
@@ -28,21 +28,32 @@ const OrderTracking = () => {
     return data;
   };
 
+  const lookupOrder = async (reference, checkoutEmail) => {
+    const params = new URLSearchParams({ email: checkoutEmail });
+    if (API_URL) {
+      const response = await fetch(
+        `${API_URL}/api/orders/${encodeURIComponent(reference)}?${params}`,
+      );
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.success) return data;
+      if (response.status !== 404) {
+        throw new Error(data.error || 'Unable to find this order.');
+      }
+    }
+    if (!WORKER_URL) {
+      throw new Error('Order tracking is not configured for this store yet.');
+    }
+    return request(`${WORKER_URL}/api/order/${encodeURIComponent(reference)}?${params}`);
+  };
+
   const findOrder = async (event) => {
     event.preventDefault();
-    if (!WORKER_URL) {
-      setErrorMessage('Order tracking is not configured for this store yet.');
-      return;
-    }
     setIsLoading(true);
     setErrorMessage('');
     setMessage('');
     setOrder(null);
     try {
-      const params = new URLSearchParams({ email: email.trim().toLowerCase() });
-      const data = await request(
-        `${WORKER_URL}/api/order/${encodeURIComponent(orderId.trim())}?${params}`,
-      );
+      const data = await lookupOrder(orderId.trim(), email.trim().toLowerCase());
       setOrder(data.order);
       setNewPickupStation(data.order.pickup_station || '');
     } catch (error) {
@@ -124,7 +135,8 @@ const OrderTracking = () => {
               <div><dt>Delivery</dt><dd>{order.delivery_status || 'pending'}</dd></div>
               <div><dt>Preferred pickup point</dt><dd>{order.pickup_station || 'Not selected'}</dd></div>
             </dl>
-            {!['ready', 'collected', 'delivered', 'cancelled'].includes(order.delivery_status) && (
+            {order.payment_provider !== 'stripe'
+              && !['ready', 'collected', 'delivered', 'cancelled'].includes(order.delivery_status) && (
               <form className="tracking-change" onSubmit={changePickupStation}>
                 <label htmlFor="new-pickup-station">Change preferred pickup point</label>
                 <input

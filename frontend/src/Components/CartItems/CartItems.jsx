@@ -54,7 +54,7 @@ return (
                 <hr />
                 <div className="cartitems-total-item">
                     <p>Shipping fee</p>
-                    <p>Free</p>
+                    <p>Calculated at checkout</p>
                 </div>
                 <hr />
                 <div className="cartitems-total-item">

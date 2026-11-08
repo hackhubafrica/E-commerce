@@ -51,6 +51,38 @@
     cursor: wait;
 }
 
+.loginsignup-providers {
+    display: grid;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.loginsignup-providers button {
+    min-height: 48px;
+    padding: 10px 14px;
+    border: 1px solid #d5d5d5;
+    border-radius: 8px;
+    background: #fff;
+    color: #333;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.loginsignup-providers button:hover {
+    background: #f7f7f7;
+}
+
+.loginsignup-providers button:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.loginsignup-fields #phone-recaptcha-container {
+    max-width: 100%;
+    overflow: hidden;
+}
+
 .loginsignup-login {
     margin-top: 20px;
     color: #5c5c5c;
@@ -85,4 +117,14 @@
     margin-top: 12px;
     color: #707070;
     font-size: 13px;
+}
+
+@media (max-width: 420px) {
+    .loginsignup {
+        padding-inline: 12px;
+    }
+
+    .loginsignup-container {
+        padding: 24px 18px;
+    }
 }

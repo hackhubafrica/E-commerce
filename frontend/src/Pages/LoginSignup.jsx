@@ -1,10 +1,21 @@
 import React, { useState } from 'react';
 import './CSS/LoginSignup.css';
 import { API_URL } from '../config';
+import {
+  confirmPhoneCode,
+  isFirebaseConfigured,
+  requestPhoneCode,
+  signInWithProvider,
+} from '../auth-providers';
 
 const LoginSignup = () => {
   const [state, setState] = useState('Login');
+  const [authMethod, setAuthMethod] = useState('email');
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
+  const [phone, setPhone] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [phoneConfirmation, setPhoneConfirmation] = useState(null);
+  const [phoneVerifier, setPhoneVerifier] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -30,6 +41,24 @@ const LoginSignup = () => {
     setIsSubmitting(true);
 
     try {
+      if (authMethod === 'phone') {
+        if (!/^\+[1-9]\d{7,14}$/.test(phone.trim())) {
+          throw new Error('Enter your phone number in international format, for example +254712345678.');
+        }
+        if (!phoneConfirmation) {
+          const result = await requestPhoneCode(phone.trim());
+          setPhoneConfirmation(result.confirmation);
+          setPhoneVerifier(result.verifier);
+          setSuccessMessage('A verification code has been sent to your phone.');
+          return;
+        }
+        if (!/^\d{6}$/.test(verificationCode.trim())) {
+          throw new Error('Enter the six-digit verification code.');
+        }
+        await confirmPhoneCode(phoneConfirmation, verificationCode.trim(), phoneVerifier);
+        setSuccessMessage('You are now signed in.');
+        return;
+      }
       if (!API_URL) {
         throw new Error('Account service is not configured for this store.');
       }
@@ -62,13 +91,27 @@ const LoginSignup = () => {
     }
   };
 
+  const handleProviderSignIn = async (provider) => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsSubmitting(true);
+    try {
+      await signInWithProvider(provider);
+      setSuccessMessage('You are now signed in.');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in with that provider.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <main className="loginsignup">
       <div className="loginsignup-container">
         <h1>{state}</h1>
         <form onSubmit={handleSubmit}>
           <div className="loginsignup-fields">
-            {state === 'Signup' && (
+            {authMethod === 'email' && state === 'Signup' && (
               <input
                 type="text"
                 name="name"
@@ -79,30 +122,83 @@ const LoginSignup = () => {
                 required
               />
             )}
-            <input
-              type="email"
-              name="email"
-              placeholder="Email address"
-              autoComplete="email"
-              value={formData.email}
-              onChange={handleInputChange}
-              required
-            />
-            <input
-              type="password"
-              name="password"
-              placeholder="Password"
-              autoComplete={state === 'Login' ? 'current-password' : 'new-password'}
-              minLength={state === 'Signup' ? 8 : undefined}
-              value={formData.password}
-              onChange={handleInputChange}
-              required
-            />
+            {authMethod === 'email' ? (
+              <>
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Email address"
+                  autoComplete="email"
+                  value={formData.email}
+                  onChange={handleInputChange}
+                  required
+                />
+                <input
+                  type="password"
+                  name="password"
+                  placeholder="Password"
+                  autoComplete={state === 'Login' ? 'current-password' : 'new-password'}
+                  minLength={state === 'Signup' ? 8 : undefined}
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  required
+                />
+              </>
+            ) : (
+              <>
+                <input
+                  type="tel"
+                  autoComplete="tel"
+                  placeholder="+254712345678"
+                  value={phone}
+                  onChange={(event) => setPhone(event.target.value)}
+                  disabled={Boolean(phoneConfirmation)}
+                  required
+                />
+                {phoneConfirmation && (
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="Six-digit SMS code"
+                    value={verificationCode}
+                    onChange={(event) => setVerificationCode(event.target.value)}
+                    required
+                  />
+                )}
+                <div id="phone-recaptcha-container" />
+              </>
+            )}
           </div>
           <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Please wait…' : state === 'Login' ? 'Log in' : 'Create account'}
+            {isSubmitting ? 'Please wait…' : authMethod === 'phone'
+              ? phoneConfirmation ? 'Verify and sign in' : 'Send phone code'
+              : state === 'Login' ? 'Log in' : 'Create account'}
           </button>
         </form>
+
+        {isFirebaseConfigured() && (
+          <div className="loginsignup-providers">
+            <button type="button" disabled={isSubmitting} onClick={() => handleProviderSignIn('google')}>Continue with Google</button>
+            <button type="button" disabled={isSubmitting} onClick={() => handleProviderSignIn('facebook')}>Continue with Facebook</button>
+            <button type="button" disabled={isSubmitting} onClick={() => handleProviderSignIn('apple')}>Continue with Apple</button>
+            <button
+              type="button"
+              disabled={isSubmitting}
+              onClick={() => {
+                phoneVerifier?.clear();
+                setAuthMethod((method) => method === 'phone' ? 'email' : 'phone');
+                setPhoneConfirmation(null);
+                setPhoneVerifier(null);
+                setVerificationCode('');
+                setErrorMessage('');
+                setSuccessMessage('');
+              }}
+            >
+              {authMethod === 'phone' ? 'Use email and password' : 'Continue with phone'}
+            </button>
+          </div>
+        )}
 
         {errorMessage && <p className="loginsignup-message error-message" role="alert">{errorMessage}</p>}
         {successMessage && <p className="loginsignup-message success-message" role="status">{successMessage}</p>}
