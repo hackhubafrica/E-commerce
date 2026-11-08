@@ -28,4 +28,34 @@
     gap: 50px;
 
 }
+
+.listproduct-remove-button {
+    padding: 8px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.listproduct-product-icon {
+    width: 52px;
+    height: 52px;
+    object-fit: cover;
+}
+
+@media (max-width: 760px) {
+    .list-product {
+        box-sizing: border-box;
+        height: auto;
+        min-height: 60vh;
+        margin: 16px;
+        padding: 12px;
+        overflow-x: auto;
+        align-items: flex-start;
+    }
+
+    .listproduct-format-main {
+        min-width: 680px;
+        gap: 12px;
+    }
+}
     

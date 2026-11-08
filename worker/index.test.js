@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { parseJotformPayload } from "./index.js";
+import worker, { getField, parseJotformPayload } from "./index.js";
 
 function createSupabaseMock() {
   const orders = new Map();
@@ -56,6 +56,17 @@ test("Jotform form submissions unwrap JSON rawRequest payloads", async () => {
   const request = new Request("https://worker.example/api/webhook", {
     method: "POST",
     body: form,
+  });
+
+  test("Jotform answer fields can be found by their displayed question label", () => {
+    const payload = {
+      answers: {
+        q77: { text: "Select Payment Method", answer: "M-Pesa STK Push" },
+        q78: { text: "Phone", answer: "0712345678" },
+      },
+    };
+    assert.equal(getField(payload, "Select Payment Method", "paymentMethod"), "M-Pesa STK Push");
+    assert.equal(getField(payload, "phone", "customerPhone", "q4"), "0712345678");
   });
 
   assert.deepEqual(await parseJotformPayload(request), {
@@ -157,6 +168,9 @@ test("successful M-Pesa callbacks save payment status and receipt reference", as
     if (String(url).includes("/processrequest")) {
       return Response.json({ CheckoutRequestID: "checkout-123", ResponseCode: "0" });
     }
+    if (String(url).includes("/stkpushquery/v1/query")) {
+      return Response.json({ ResponseCode: "0", ResultCode: 0 });
+    }
     return Response.json({}, { status: 404 });
   });
   const mpesaEnv = {
@@ -173,6 +187,7 @@ test("successful M-Pesa callbacks save payment status and receipt reference", as
     body: JSON.stringify({
       orderId: "ORD-mpesa",
       orderTotal: "20",
+      currency: "KES",
       paymentMethod: "M-Pesa STK Push",
       phone: "0712345678",
       email: "buyer@example.com",
@@ -190,7 +205,10 @@ test("successful M-Pesa callbacks save payment status and receipt reference", as
           ResultCode: 0,
           CheckoutRequestID: "checkout-123",
           CallbackMetadata: {
-            Item: [{ Name: "MpesaReceiptNumber", Value: "QRS123ABC" }],
+            Item: [
+              { Name: "MpesaReceiptNumber", Value: "QRS123ABC" },
+              { Name: "Amount", Value: 20 },
+            ],
           },
         },
       },
@@ -207,4 +225,189 @@ test("successful M-Pesa callbacks save payment status and receipt reference", as
   const trackedData = await tracked.json();
   assert.equal(trackedData.order.status, "completed");
   assert.equal(dbFetch.orders.get("ORD-mpesa").transaction_reference, "QRS123ABC");
+});
+
+test("a successful callback with the wrong amount does not complete an order", async (t) => {
+  const dbFetch = createSupabaseMock();
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    if (String(url).includes("/rest/v1/")) return dbFetch(url, options);
+    if (String(url).includes("/oauth/v1/generate")) return Response.json({ access_token: "test-token" });
+    if (String(url).includes("/processrequest")) {
+      return Response.json({ CheckoutRequestID: "checkout-mismatch", ResponseCode: "0" });
+    }
+    if (String(url).includes("/stkpushquery/v1/query")) {
+      return Response.json({ ResponseCode: "0", ResultCode: 0 });
+    }
+    return Response.json({}, { status: 404 });
+  });
+  const mpesaEnv = {
+    ...env,
+    DARAJA_CONSUMER_KEY: "test-key",
+    DARAJA_CONSUMER_SECRET: "test-secret",
+    MPESA_SHORTCODE: "174379",
+    MPESA_PASSKEY: "test-passkey",
+    MPESA_CALLBACK_URL: "https://worker.example/api/mpesa/callback",
+  };
+  await worker.fetch(new Request("https://worker.example/api/webhook", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      orderId: "ORD-mismatch",
+      orderTotal: "20",
+      currency: "KES",
+      paymentMethod: "M-Pesa STK Push",
+      phone: "0712345678",
+      email: "buyer@example.com",
+      pickupStation: "Westlands",
+    }),
+  }), mpesaEnv);
+
+  const response = await worker.fetch(new Request("https://worker.example/api/mpesa/callback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      Body: {
+        stkCallback: {
+          ResultCode: 0,
+          CheckoutRequestID: "checkout-mismatch",
+          CallbackMetadata: {
+            Item: [
+              { Name: "MpesaReceiptNumber", Value: "BAD123" },
+              { Name: "Amount", Value: 99 },
+            ],
+          },
+        },
+      },
+    }),
+  }), mpesaEnv);
+
+  assert.equal(response.status, 200);
+  assert.equal(dbFetch.orders.get("ORD-mismatch").status, "pending");
+});
+
+test("a callback is not trusted when Daraja STK Query disagrees", async (t) => {
+  const dbFetch = createSupabaseMock();
+  dbFetch.orders.set("ORD-unverified", {
+    order_id: "ORD-unverified",
+    daraja_checkout_request_id: "checkout-unverified",
+    order_total: 20,
+    currency: "KES",
+    mpesa_amount_kes: 20,
+    status: "pending",
+  });
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    if (String(url).includes("/rest/v1/")) return dbFetch(url, options);
+    if (String(url).includes("/oauth/v1/generate")) return Response.json({ access_token: "test-token" });
+    if (String(url).includes("/stkpushquery/v1/query")) {
+      return Response.json({ ResponseCode: "0", ResultCode: 1032 });
+    }
+    return Response.json({}, { status: 404 });
+  });
+
+  const response = await worker.fetch(new Request("https://worker.example/api/mpesa/callback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      Body: {
+        stkCallback: {
+          ResultCode: 0,
+          CheckoutRequestID: "checkout-unverified",
+          CallbackMetadata: {
+            Item: [
+              { Name: "MpesaReceiptNumber", Value: "FAKE123" },
+              { Name: "Amount", Value: 20 },
+            ],
+          },
+        },
+      },
+    }),
+  }), {
+    ...env,
+    DARAJA_CONSUMER_KEY: "test-key",
+    DARAJA_CONSUMER_SECRET: "test-secret",
+    MPESA_SHORTCODE: "174379",
+    MPESA_PASSKEY: "test-passkey",
+  });
+
+  assert.equal(response.status, 503);
+  assert.equal(dbFetch.orders.get("ORD-unverified").status, "pending");
+});
+
+test("USD orders convert to a configured KES amount before requesting STK", async (t) => {
+  const dbFetch = createSupabaseMock();
+  let stkPayload;
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    if (String(url).includes("/rest/v1/")) return dbFetch(url, options);
+    if (String(url).includes("/oauth/v1/generate")) return Response.json({ access_token: "test-token" });
+    if (String(url).includes("/processrequest")) {
+      stkPayload = JSON.parse(options.body);
+      return Response.json({ CheckoutRequestID: "checkout-usd", ResponseCode: "0" });
+    }
+    return Response.json({}, { status: 404 });
+  });
+  const mpesaEnv = {
+    ...env,
+    DARAJA_CONSUMER_KEY: "test-key",
+    DARAJA_CONSUMER_SECRET: "test-secret",
+    MPESA_SHORTCODE: "174379",
+    MPESA_PASSKEY: "test-passkey",
+    MPESA_CALLBACK_URL: "https://worker.example/api/mpesa/callback",
+    MPESA_USD_TO_KES_RATE: "130",
+  };
+  const response = await worker.fetch(new Request("https://worker.example/api/webhook", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      orderId: "ORD-usd",
+      orderTotal: "20",
+      currency: "USD",
+      paymentMethod: "M-Pesa STK Push",
+      phone: "0712345678",
+      email: "buyer@example.com",
+      pickupStation: "Westlands",
+    }),
+  }), mpesaEnv);
+
+  assert.equal(response.status, 200);
+  assert.equal(stkPayload.Amount, 2600);
+  assert.equal(dbFetch.orders.get("ORD-usd").currency, "USD");
+  assert.equal(dbFetch.orders.get("ORD-usd").mpesa_amount_kes, 2600);
+});
+
+test("USD M-Pesa requests fail safely when no exchange rate is configured", async (t) => {
+  const dbFetch = createSupabaseMock();
+  let darajaCalled = false;
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    if (String(url).includes("/rest/v1/")) return dbFetch(url, options);
+    if (String(url).includes("/oauth/v1/generate") || String(url).includes("/processrequest")) {
+      darajaCalled = true;
+    }
+    return Response.json({ access_token: "test-token", CheckoutRequestID: "unexpected" });
+  });
+  const response = await worker.fetch(new Request("https://worker.example/api/webhook", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      orderId: "ORD-usd-no-rate",
+      orderTotal: "20",
+      currency: "USD",
+      paymentMethod: "M-Pesa STK Push",
+      phone: "0712345678",
+      email: "buyer@example.com",
+      pickupStation: "Westlands",
+    }),
+  }), {
+    ...env,
+    DARAJA_CONSUMER_KEY: "test-key",
+    DARAJA_CONSUMER_SECRET: "test-secret",
+    MPESA_SHORTCODE: "174379",
+    MPESA_PASSKEY: "test-passkey",
+    MPESA_CALLBACK_URL: "https://worker.example/api/mpesa/callback",
+  });
+  const data = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(data.status, "failed");
+  assert.equal(darajaCalled, false);
+  assert.equal(dbFetch.orders.get("ORD-usd-no-rate").status, "failed");
 });

@@ -17,16 +17,19 @@ On the master form, create fields with these names:
 
 - `orderId` (hidden short text)
 - `orderTotal` (hidden short text)
+- `currency` (hidden short text; checkout currently sends `USD`)
 - `items` (hidden long text)
 - `pickupStation` (short text)
 - Customer name, email, phone, and address
 - `Select Payment Method` with the exact option `M-Pesa STK Push` for mobile
   money; keep the other payment option labels consistent with the form
 
-The checkout sends the order reference, total, cart quantities, and preferred
-pickup point as URL-prefill values. Ensure the corresponding fields in the
-master form accept those values. Add the form's actual payment fields and
-conditional logic in Jotform.
+The checkout sends the order reference, total, currency, cart quantities, and
+preferred pickup point as URL-prefill values. Ensure the corresponding fields
+in the master form accept and submit those values. Map customer name, email,
+phone, and address into the Worker fields (`name`/`q2`, `email`/`q3`,
+`phone`/`q4`, and `address`/`q5`). Add the form's payment method and required
+fields/conditional logic in Jotform.
 
 Under **Settings → Integrations → Webhooks**, set the URL to:
 
@@ -53,6 +56,8 @@ must only be stored in Cloudflare's secret settings:
 - `DARAJA_CONSUMER_SECRET` (secret)
 - `MPESA_SHORTCODE`
 - `MPESA_PASSKEY` (secret)
+- `MPESA_USD_TO_KES_RATE` (Worker variable; required while USD-priced orders
+  are used with M-Pesa, and manually maintained)
 - `MPESA_CALLBACK_URL` (`https://YOUR-WORKER.workers.dev/api/mpesa/callback`)
 
 Deploy `worker/index.js` using the repository's `wrangler.toml`, then set the
@@ -69,9 +74,20 @@ connected before card orders can safely become `completed`. Do not manually
 change this to trust a customer-provided form field.
 
 For M-Pesa, the Worker sends the STK Push request and updates the order from
-Safaricom's callback. A failed STK request or callback is recorded as failed.
-The Daraja sandbox requires working Cloudflare secrets and a publicly
-reachable callback URL; local code tests cannot verify those external settings.
+Safaricom's callback only after checking Daraja's STK Query result and matching
+the reported amount to the saved order amount. USD totals are not sent as KES
+values: without `MPESA_USD_TO_KES_RATE`, the Worker refuses the request. The
+configured conversion is manual and must be kept accurate. A failed STK request
+or callback result is recorded. A successful callback is only applied if its
+reported amount matches the stored expected M-Pesa amount; a mismatch leaves
+the order pending for investigation. The Daraja sandbox requires working
+Cloudflare secrets and a publicly reachable callback URL; local code tests
+cannot verify those external settings.
+
+Before production, independently verify that Jotform-submitted product
+quantities and totals match trusted server-side product prices. The current
+Jotform webhook payload is not itself proof that the submitted amount is
+correct, and the automated tests do not contact Safaricom.
 
 ## 5. Pickup and tracking behavior
 

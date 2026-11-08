@@ -33,3 +33,10 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+
+.catalog-status {
+  padding: 10px clamp(16px, 4vw, 48px);
+  background: #fff6db;
+  color: #684c00;
+  text-align: center;
+}

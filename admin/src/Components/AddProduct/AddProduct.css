@@ -11,7 +11,7 @@
 
 .addproduct-itemfield{
     width: 100%;
-    color: Ml#7b7b7b;
+    color: #7b7b7b;
     font-size: 16px;
 }
 
@@ -34,12 +34,67 @@
     gap: 40px;
 }
 
+.add-product-price {
+    display: flex;
+    gap: 20px;
+}
+
+.add-product-price .addproduct-itemfield {
+    flex: 1;
+}
+
 .add-product-selector{
     padding: 10px;
-    width: 100px;
+    width: 100%;
     height: 50px;
     font-size: 14px;
     color: #7b7b7b;
     border: 1px solid #7b7b7b8d;
     border-radius: 4px;
+}
+
+.addproduct-itemfield label {
+    display: block;
+    margin: 14px 0 8px;
+}
+
+.addproduct-thumbnail-img {
+    display: block;
+    width: 140px;
+    height: 140px;
+    margin-top: 12px;
+    object-fit: contain;
+    cursor: pointer;
+}
+
+.addproduct-btn {
+    min-width: 140px;
+    min-height: 44px;
+    margin-top: 20px;
+    border: 0;
+    border-radius: 4px;
+    background: #ff4141;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.admin-form-error {
+    color: #a32121;
+}
+
+.admin-form-success {
+    color: #176b3a;
+}
+
+@media (max-width: 600px) {
+    .add-product {
+        margin: 16px;
+        padding: 24px;
+    }
+
+    .add-product-price {
+        flex-direction: column;
+        gap: 0;
+    }
 }

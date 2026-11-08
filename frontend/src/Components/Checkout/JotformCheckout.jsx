@@ -29,6 +29,7 @@ const JotformCheckout = () => {
     const params = new URLSearchParams({
       orderId,
       orderTotal: orderTotal.toFixed(2),
+      currency: 'USD',
       pickupStation: station,
       items: JSON.stringify(items),
     });

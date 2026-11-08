@@ -3,13 +3,19 @@ const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
+const fs = require("fs");
+const { randomBytes } = require("node:crypto");
 const cors = require("cors");
+const { rateLimit } = require("express-rate-limit");
 const { hashPassword, verifyPassword } = require("./auth-utils");
+const { createAdminAuth, verifyAdminCredentials } = require("./admin-auth");
 
 const port = Number(process.env.PORT) || 4000;
 const app = express();
+const uploadDirectory = path.join(__dirname, "upload", "images");
+fs.mkdirSync(uploadDirectory, { recursive: true });
 
-app.use(express.json());
+app.use(express.json({ limit: "1mb" }));
 const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:4321")
   .split(",")
   .map((origin) => origin.trim())
@@ -27,6 +33,28 @@ app.use(
 
 const uri = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/e-commerce";
 const jwtSecret = process.env.JWT_SECRET;
+const requireAdmin = createAdminAuth(jwt, jwtSecret);
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { success: false, error: "Too many sign-in attempts. Try again later." },
+});
+const customerLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { success: false, error: "Too many sign-in attempts. Try again later." },
+});
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { success: false, error: "Too many sign-up attempts. Try again later." },
+});
 
 mongoose.connect(uri)
   .then(() => {
@@ -53,34 +81,50 @@ app.get("/", (req, res) => {
 // Configure multer to store files in the desired directory
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'upload/images'); // specify the folder where you want to save files
+    cb(null, uploadDirectory);
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname)); // unique file name
+    const extensions = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif" };
+    const uniqueSuffix = `${Date.now()}-${randomBytes(8).toString("hex")}`;
+    cb(null, `${uniqueSuffix}${extensions[file.mimetype]}`);
   }
 });
 
-// Initialize multer with the defined storage
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    cb(null, ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.mimetype));
+  },
+});
 
 // Serve static files from 'upload/images'
-app.use('/images', express.static('upload/images'));
+app.use('/images', express.static(uploadDirectory));
 
-// Upload route
-app.post("/upload", upload.single('product'), (req, res) => {
-  console.log("POST request to /upload");
-
-  if (!req.file) {
-    console.error("No file uploaded.");
-    return res.status(400).json({ success: 0, message: "No file uploaded." });
+app.post("/admin/login", adminLoginLimiter, (req, res) => {
+  const { email, password } = req.body || {};
+  if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD || !jwtSecret) {
+    return res.status(503).json({ success: false, error: "Admin login is not configured." });
+  }
+  if (!verifyAdminCredentials(email, password, process.env.ADMIN_EMAIL, process.env.ADMIN_PASSWORD)) {
+    return res.status(401).json({ success: false, error: "Email or password is incorrect." });
   }
 
-  console.log("File uploaded successfully:", req.file.filename);
-  res.json({
-    success: 1,
-    image_url: `http://localhost:${port}/images/${req.file.filename}`
-  });
+  const normalizedEmail = String(email).trim().toLowerCase();
+  const token = jwt.sign({ role: "admin", email: normalizedEmail }, jwtSecret, { expiresIn: "8h" });
+  return res.json({ success: true, token });
+});
+
+app.get("/admin/session", requireAdmin, (req, res) => {
+  res.json({ success: true, email: req.admin.email });
+});
+
+app.post("/upload", requireAdmin, upload.single("product"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: "Choose an image (JPEG, PNG, WebP, or GIF, up to 5 MB)." });
+  }
+  const baseUrl = process.env.PUBLIC_API_URL || `${req.protocol}://${req.get("host")}`;
+  res.json({ success: true, image_url: `${baseUrl}/images/${req.file.filename}` });
 });
 
 // Schema for uploading products
@@ -97,6 +141,11 @@ const productSchema = new mongoose.Schema({
   },
   image: {
     type: String,
+    required: true,
+  },
+  category: {
+    type: String,
+    enum: ["women", "men", "kid"],
     required: true,
   },
   new_price: {
@@ -162,7 +211,7 @@ const orderSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ['Credit Card (International)', 'Local Payment / Bank Transfer'],
+    enum: ['Credit Card (International)', 'Local Payment / Bank Transfer', 'M-Pesa STK Push'],
     required: true,
   },
   orderTotal: {
@@ -197,35 +246,29 @@ const orderSchema = new mongoose.Schema({
 const Order = mongoose.model('Order', orderSchema);
 
 // Add product endpoint
-app.post('/addproduct', async (req, res) => {
-  console.log("POST request to /addproduct with data:", req.body);
-  
-  const { name, image, category, new_price, old_price } = req.body;
-
-  // Validate product data
-  if (!name || !image || !category || !new_price) {
-    return res.status(400).json({ success: 0, message: "All fields are required." });
+app.post("/addproduct", requireAdmin, async (req, res) => {
+  const name = String(req.body.name || "").trim();
+  const { image, category } = req.body;
+  const newPrice = Number(req.body.new_price);
+  const oldPrice = Number(req.body.old_price);
+  if (
+    !name || name.length > 160 || !image
+    || !["women", "men", "kid"].includes(category)
+    || !Number.isFinite(newPrice) || newPrice <= 0
+    || !Number.isFinite(oldPrice) || oldPrice < newPrice
+  ) {
+    return res.status(400).json({ success: false, message: "Enter a name, image, category, and valid prices." });
   }
-
-  // Generate a unique ID
-  const productId = new Date().getTime().toString(); // Example of generating an ID
-
-  const product = new Product({
-    id: productId,
-    name: req.body.name,
-    image: req.body.image,
-    category:req.body.category,
-    new_price: req.body.new_price,
-    old_price: req.body.old_price,
-  });
-
   try {
-    await product.save();
-    console.log("Product saved successfully:", product);
-    res.json({
-      success: true,
-      name: req.body.name,
+    const product = await Product.create({
+      id: Date.now(),
+      name,
+      image,
+      category,
+      new_price: newPrice,
+      old_price: oldPrice,
     });
+    res.status(201).json({ success: true, product: product.toObject() });
   } catch (error) {
     console.error("Error saving product:", error);
     res.status(500).json({ success: false, message: "Error saving product." });
@@ -234,22 +277,20 @@ app.post('/addproduct', async (req, res) => {
 
 
 // Assuming you have already defined express, app, Product model, etc.
-app.post("/removeproduct", async (req, res) => {
+app.post("/removeproduct", requireAdmin, async (req, res) => {
   try {
-    const { id } = req.body;
-
-    // Validate if the provided ID is a valid ObjectId
-    if (!mongoose.isValidObjectId(id))  {
-      return res.status(400).json({ success: 0, message: "Invalid product ID format." });
+    const id = String(req.body.id || "");
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid product ID." });
     }
 
     const product = await Product.findByIdAndDelete(id);
 
     if (!product) {
-      return res.status(404).json({ success: 0, message: "Product not found." });
+      return res.status(404).json({ success: false, message: "Product not found." });
     }
 
-    res.json({ success: 1, message: "Product removed successfully." });
+    res.json({ success: true, message: "Product removed successfully." });
   } catch (error) {
     console.error("Error removing product:", error);
     res.status(500).json({ success: 0, message: "Internal server error." });
@@ -258,13 +299,14 @@ app.post("/removeproduct", async (req, res) => {
 
 
 // Get all products endpoint
-app.get('/allproducts', async (req, res) => {
-  console.log("GET request to /allproducts");
-
+app.get("/allproducts", async (req, res) => {
   try {
-    let products = await Product.find({});
-    console.log("All Products Fetched:", products);
-    res.send(products);
+    const products = await Product.find({ available: { $ne: false } }).sort({ date: -1 }).lean();
+    res.json(products.map((product) => ({
+      ...product,
+      id: String(product._id),
+      category: String(product.category || "").toLowerCase(),
+    })));
   } catch (error) {
     console.error("Error fetching products:", error);
     res.status(500).send("Server Error");
@@ -272,7 +314,7 @@ app.get('/allproducts', async (req, res) => {
 });
 
 // Signup endpoint
-app.post('/signup', async (req, res) => {
+app.post('/signup', signupLimiter, async (req, res) => {
   try {
     const name = String(req.body.name || req.body.username || "").trim();
     const email = String(req.body.email || "").trim().toLowerCase();
@@ -362,7 +404,7 @@ app.post('/api/order', async (req, res) => {
       customerAddress,
       paymentMethod,
       orderTotal,
-      status: paymentMethod === 'Credit Card (International)' ? 'completed' : 'pending',
+      status: 'pending',
       transactionReference,
       items,
       submissionId,
@@ -383,7 +425,7 @@ app.post('/api/order', async (req, res) => {
 });
 
 // Login endpoint
-app.post('/login', async (req, res) => {
+app.post('/login', customerLoginLimiter, async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = req.body.password;

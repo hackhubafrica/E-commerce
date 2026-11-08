@@ -15,3 +15,27 @@
 .nav-profile{
     width: 75px;
 }
+
+.admin-logout{
+    min-height: 40px;
+    padding: 0 16px;
+    border: 1px solid #b9b9b9;
+    border-radius: 6px;
+    background: white;
+    cursor: pointer;
+}
+
+@media (max-width: 600px) {
+    .navbar {
+        gap: 12px;
+        padding: 12px 16px;
+    }
+
+    .nav-logo {
+        width: min(45vw, 180px);
+    }
+
+    .nav-profile {
+        display: none;
+    }
+}

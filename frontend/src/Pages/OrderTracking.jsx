@@ -119,6 +119,8 @@ const OrderTracking = () => {
             <h2>Order {order.order_id}</h2>
             <dl>
               <div><dt>Payment</dt><dd>{order.status}</dd></div>
+              <div><dt>Order total</dt><dd>{new Intl.NumberFormat(undefined, { style: 'currency', currency: order.currency || 'USD' }).format(Number(order.order_total || 0))}</dd></div>
+              {order.mpesa_amount_kes && <div><dt>M-Pesa request amount</dt><dd>KES {order.mpesa_amount_kes}</dd></div>}
               <div><dt>Delivery</dt><dd>{order.delivery_status || 'pending'}</dd></div>
               <div><dt>Preferred pickup point</dt><dd>{order.pickup_station || 'Not selected'}</dd></div>
             </dl>

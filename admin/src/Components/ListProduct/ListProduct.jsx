@@ -1,55 +1,46 @@
-import React, { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import PropTypes from 'prop-types';
 import './ListProduct.css'
 import cross_icon from '../../assets/cross_icon.png'
+import { adminRequest, API_URL } from '../../api'
 
+const ListProduct = ({ token }) => {
+    const [allProducts, setAllProducts] = useState([]);
+    const [error, setError] = useState("");
+    const [isLoading, setIsLoading] = useState(true);
 
-const ListProduct = (products, setProducts) => {
-
-    const [allproducts,setAllProducts] = useState ([]);
-
-    const fetchInfo = async (id) => {
-        await fetch ('http://localhost:4000/allproducts')
-        .then((res) => res.json())
-        .then((data)=>{setAllProducts(data)});
-    }
-
-    useEffect(() =>{
-        fetchInfo();
-    },[])
-
-
-
-    const remove_product = async (id) => {
-    try {
-        const response = await fetch('http://localhost:4000/removeproduct', {
-            method: 'POST',
-            headers: {
-                // Accept: 'application/json',
-                'Content-Type': 'application/json' // Ensure this line is included if you send JSON
-            },
-            body: JSON.stringify({ id }), // Pass the id in the body
-        });
-
-            if (response.ok) {
-        const data = await response.json();
-        console.log(data.message);
-
-        // Update the frontend by removing the deleted product from the list
-        setProducts((prevProducts) => prevProducts.filter((product) => product._id !== id));
-        // if (data.success) {
-            // alert("Product removed successfully");
-            // Optionally, refresh the list of products or update the state
-        } else {
-            console.error('Failed to remove product:', response.statusText);
+    const fetchProducts = useCallback(async () => {
+        setIsLoading(true);
+        setError("");
+        try {
+            const response = await fetch(`${API_URL}/allproducts`);
+            if (!response.ok) throw new Error("Unable to load products.");
+            const products = await response.json();
+            setAllProducts(products);
+        } catch (requestError) {
+            setError(requestError instanceof Error ? requestError.message : "Unable to load products.");
+        } finally {
+            setIsLoading(false);
         }
-    } catch (error) {
-        console.error("Error removing product:", error);
-        alert("An error occurred while removing the product");
-    }
-    if (responseData.success) {
-        setProducts((prevProducts) => prevProducts.filter((p) => p.id !== id)); // Remove product from state
-    }
-};
+    }, []);
+
+    useEffect(() => {
+        fetchProducts();
+    }, [fetchProducts]);
+
+    const removeProduct = async (id) => {
+        if (!window.confirm("Remove this product?")) return;
+        try {
+            await adminRequest("/removeproduct", token, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id }),
+            });
+            setAllProducts((products) => products.filter((product) => product.id !== id));
+        } catch (requestError) {
+            setError(requestError instanceof Error ? requestError.message : "Unable to remove product.");
+        }
+    };
 
 
 return (
@@ -65,14 +56,19 @@ return (
         </div>
         <div className="listproduct-allproducts">
             <hr />
-            {allproducts.map((product,index) =>{
-                return <div key={index} className="listproduct-format-main listproduct-format">
+            {isLoading && <p role="status">Loading products...</p>}
+            {error && <p className="admin-form-error" role="alert">{error}</p>}
+            {!isLoading && !error && allProducts.length === 0 && <p>No products have been uploaded yet.</p>}
+            {allProducts.map((product) =>{
+                return <div key={product.id} className="listproduct-format-main listproduct-format">
                     <img src={product.image} alt="" className='listproduct-product-icon'/>
                     <p>{product.name}</p>
                     <p>${product.old_price}</p>
                     <p>${product.new_price}</p>
                     <p>{product.category}</p>
-                    <img onClick={() => remove_product(product.id)} src={cross_icon} alt="" className='listproduct-remove-icon' />
+                    <button type="button" className="listproduct-remove-button" onClick={() => removeProduct(product.id)} aria-label={`Remove ${product.name}`}>
+                        <img src={cross_icon} alt="" className='listproduct-remove-icon' />
+                    </button>
                 </div>
 
             })}
@@ -83,3 +79,7 @@ return (
 }
 
 export default ListProduct
+
+ListProduct.propTypes = {
+    token: PropTypes.string.isRequired,
+};

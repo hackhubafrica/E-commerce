@@ -10,7 +10,8 @@ create table if not exists orders (
   customer_address text,
   payment_method text,
   order_total numeric not null,
-  currency text default 'KES',
+  currency text not null default 'KES',
+  mpesa_amount_kes integer,
   status text default 'pending' check (status in ('pending', 'completed', 'failed', 'cancelled')),
   transaction_reference text,
   items jsonb default '{}'::jsonb,
@@ -24,6 +25,8 @@ create table if not exists orders (
 
 alter table orders add column if not exists pickup_station text;
 alter table orders add column if not exists delivery_status text not null default 'pending';
+alter table orders add column if not exists currency text not null default 'KES';
+alter table orders add column if not exists mpesa_amount_kes integer;
 
 -- The Worker uses the service-role key; browser clients do not need direct order access.
 alter table orders enable row level security;

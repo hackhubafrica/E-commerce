@@ -1,5 +1,3 @@
-// DON'T TOUCH THIS FILE
-
 import React, { useContext } from 'react'
 import './CSS/ShopCategory.css'
 import { ShopContext } from '../Context/ShopContext'
@@ -8,36 +6,32 @@ import Item from '../Components/Item/Item'
 import getImageSrc from '../utils/getImageSrc'
 
 const ShopCategory = (props) => {
-    const { all_product } = useContext(ShopContext);
+    const { all_product, catalogError } = useContext(ShopContext);
+    const products = all_product.filter((item) => props.category === item.category);
 
     return (
         <div className="shop-category">
             <img className="shopcategory-banner" src={getImageSrc(props.banner)} alt={`${props.category} clothing collection`} />
             <div className="shopcategory-IndexSort">
                 <p>
-                    <span>Showing 1-12 products</span> out of 36 products
+                    <span>Showing {products.length} products</span>
                 </p>
                 <div className="shopcategory-sort">
                     sort by <img src={getImageSrc(dropdown_icon)} alt="" />
                 </div>
             </div>
             <div className="shopcategory-products">
-            {all_product.map((item, i) => {
-                        if (props.category === item.category) {
-                            return (
+            {catalogError && <p role="status">{catalogError}</p>}
+            {products.map((item) => (
                                 <Item
-                                    key={i}
+                                    key={item.id}
                                     id={item.id}
                                     name={item.name}
                                     image={item.image}
                                     new_price={item.new_price}
                                     old_price={item.old_price}
                                 />
-                            );
-                        } else {
-                            return null;
-                        }
-                    })}
+                    ))}
             </div>
         </div>
     )

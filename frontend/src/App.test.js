@@ -38,3 +38,37 @@ test('image assets work as Astro metadata and regular URLs', () => {
   expect(getImageSrc('/assets/product.png')).toBe('/assets/product.png');
   expect(getImageSrc({ src: '/_astro/product.hash.png' })).toBe('/_astro/product.hash.png');
 });
+
+test('products from the API can be added to the cart and included in its total', async () => {
+  jest.spyOn(global, 'fetch').mockResolvedValue({
+    ok: true,
+    json: async () => [{
+      id: 'mongo-product-1',
+      name: 'API-created jacket',
+      category: 'men',
+      image: 'http://localhost:4000/images/jacket.png',
+      new_price: 12.5,
+      old_price: 20,
+    }],
+  });
+  render(
+    <ShopContextProvider>
+      <DynamicProductHarness />
+    </ShopContextProvider>,
+  );
+
+  const addButton = await screen.findByRole('button', { name: 'Add API product' });
+  fireEvent.click(addButton);
+  expect(screen.getByLabelText('dynamic cart total')).toHaveTextContent('12.5');
+});
+
+function DynamicProductHarness() {
+  const { all_product, addToCart, getTotalCartAmount } = useContext(ShopContext);
+  const dynamicProduct = all_product.find((product) => product.id === 'mongo-product-1');
+  return (
+    <div>
+      {dynamicProduct && <button onClick={() => addToCart(dynamicProduct.id)}>Add API product</button>}
+      <output aria-label="dynamic cart total">{getTotalCartAmount()}</output>
+    </div>
+  );
+}

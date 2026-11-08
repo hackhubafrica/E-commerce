@@ -39,12 +39,25 @@ export async function parseJotformPayload(request) {
     : body;
 }
 
-function getField(payload, ...keys) {
+export function getField(payload, ...keys) {
+  const normalizeKey = (key) => String(key).toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalizedKeys = new Set(keys.map(normalizeKey));
   for (const source of [payload, payload?.answers]) {
     if (!source || typeof source !== "object") continue;
     for (const key of keys) {
       const value = decodeField(source[key]);
       if (value !== "") return value;
+    }
+  }
+  if (payload?.answers && typeof payload.answers === "object") {
+    for (const field of Object.values(payload.answers)) {
+      if (
+        field && typeof field === "object"
+        && normalizedKeys.has(normalizeKey(field.text || field.name || ""))
+      ) {
+        const value = decodeField(field);
+        if (value !== "") return value;
+      }
     }
   }
   return "";
@@ -131,6 +144,33 @@ export default {
       return data.access_token;
     }
 
+    async function queryDarajaStk(checkoutRequestId) {
+      const baseUrl =
+        env.DARAJA_ENVIRONMENT === "production"
+          ? "https://api.safaricom.co.ke"
+          : "https://sandbox.safaricom.co.ke";
+      const accessToken = await getDarajaAccessToken();
+      const { timestamp, password } = getDarajaPasswordData();
+      const response = await fetch(`${baseUrl}/mpesa/stkpushquery/v1/query`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          BusinessShortCode: env.MPESA_SHORTCODE,
+          Password: password,
+          Timestamp: timestamp,
+          CheckoutRequestID: checkoutRequestId,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok || String(data.ResponseCode) !== "0") {
+        throw new Error(data.errorMessage || data.ResponseDescription || "Daraja could not verify the STK result.");
+      }
+      return data;
+    }
+
     // ------------------------------------------------------------------
     // Helper: Generate Daraja timestamp + password
     // ------------------------------------------------------------------
@@ -177,6 +217,7 @@ export default {
         const customerAddress = getField(payload, "address", "customerAddress", "q5");
         const paymentMethod = String(getField(payload, "Select Payment Method", "paymentMethod") || "Local Payment / Bank Transfer");
         const orderTotal = Number(getField(payload, "orderTotal", "amount", "q6"));
+        const currency = String(getField(payload, "currency", "orderCurrency") || "USD").trim().toUpperCase();
         const transactionReference = getField(payload, "transactionReference", "q7");
         const submissionId = getField(payload, "submissionID", "submission_id");
         const pickupStation = String(getField(payload, "pickupStation", "pickup_station", "pickupStationName")).trim();
@@ -198,6 +239,9 @@ export default {
             400,
             corsHeaders
           );
+        }
+        if (!["KES", "USD"].includes(currency)) {
+          return jsonResponse({ success: false, error: "Currency must be KES or USD." }, 400, corsHeaders);
         }
         if (!pickupStation) {
           return jsonResponse(
@@ -243,6 +287,7 @@ export default {
             customer_address: customerAddress,
             payment_method: paymentMethod,
             order_total: orderTotal,
+            currency,
             status,
             transaction_reference: transactionReference,
             items,
@@ -278,23 +323,48 @@ export default {
             if (!customerPhone) {
               throw new Error("Missing customer phone number.");
             }
-            const accessToken = await getDarajaAccessToken();
-            if (!accessToken) throw new Error("Daraja did not return an access token.");
-            const { timestamp, password } = getDarajaPasswordData();
             const formattedPhone = formatPhone(customerPhone);
             if (!/^254[17]\d{8}$/.test(formattedPhone)) {
               throw new Error("The phone number is not a valid Kenyan mobile number.");
             }
+            const callbackUrl = env.MPESA_CALLBACK_URL || `${env.WORKER_URL || ""}/api/mpesa/callback`;
+            let mpesaAmount;
+            if (currency === "KES") {
+              mpesaAmount = Math.round(orderTotal);
+            } else if (currency === "USD") {
+              const usdToKesRate = Number(env.MPESA_USD_TO_KES_RATE);
+              if (!Number.isFinite(usdToKesRate) || usdToKesRate <= 0) {
+                throw new Error("M-Pesa is disabled for USD orders until MPESA_USD_TO_KES_RATE is configured.");
+              }
+              mpesaAmount = Math.round(orderTotal * usdToKesRate);
+            } else {
+              throw new Error(`M-Pesa does not support ${currency} orders.`);
+            }
+            if (!Number.isSafeInteger(mpesaAmount) || mpesaAmount < 1) {
+              throw new Error("The M-Pesa amount must be at least KES 1.");
+            }
+            let parsedCallbackUrl;
+            try {
+              parsedCallbackUrl = new URL(callbackUrl);
+            } catch {
+              throw new Error("A public HTTPS M-Pesa callback URL is required.");
+            }
+            if (parsedCallbackUrl.protocol !== "https:") {
+              throw new Error("A public HTTPS M-Pesa callback URL is required.");
+            }
+            const accessToken = await getDarajaAccessToken();
+            if (!accessToken) throw new Error("Daraja did not return an access token.");
+            const { timestamp, password } = getDarajaPasswordData();
             const stkPayload = {
               BusinessShortCode: env.MPESA_SHORTCODE,
               Password: password,
               Timestamp: timestamp,
               TransactionType: "CustomerPayBillOnline",
-              Amount: Math.round(Number(orderTotal)),
+              Amount: mpesaAmount,
               PartyA: formattedPhone,
               PartyB: env.MPESA_SHORTCODE,
               PhoneNumber: formattedPhone,
-              CallBackURL: env.MPESA_CALLBACK_URL || `${env.WORKER_URL}/api/mpesa/callback`,
+              CallBackURL: parsedCallbackUrl.toString(),
               AccountReference: "EcomOrder",
               TransactionDesc: `Payment for order ${orderId}`,
             };
@@ -315,13 +385,19 @@ export default {
             );
             const darajaData = await darajaRes.json();
             console.log("Daraja STK Push response:", darajaData);
-            if (darajaData.CheckoutRequestID) {
+            if (darajaRes.ok && darajaData.CheckoutRequestID) {
               paymentStatus = "pending";
-              await supabaseRequest(
+              const updateResult = await supabaseRequest(
                 "PATCH",
-                `orders?order_id=eq.${orderId}`,
-                { daraja_checkout_request_id: darajaData.CheckoutRequestID }
+                `orders?order_id=eq.${encodeURIComponent(orderId)}`,
+                {
+                  daraja_checkout_request_id: darajaData.CheckoutRequestID,
+                  mpesa_amount_kes: mpesaAmount,
+                }
               );
+              if (!updateResult.ok) {
+                throw new Error("Daraja accepted the STK request, but the order could not be linked to its callback.");
+              }
             } else {
               throw new Error(darajaData.errorMessage || darajaData.ResponseDescription || "Daraja rejected the STK Push request.");
             }
@@ -369,14 +445,27 @@ export default {
           );
         }
         const { ResultCode, CheckoutRequestID, CallbackMetadata } = stkCallback;
+        if (!CheckoutRequestID) {
+          return new Response(
+            JSON.stringify({ ResultCode: 1, ResultDesc: "Missing checkout request ID" }),
+            { status: 400, headers: corsHeaders }
+          );
+        }
         const queryResult = await supabaseRequest(
           "GET",
           "orders",
           null,
-          `?daraja_checkout_request_id=eq.${CheckoutRequestID}&select=*`
+          `?daraja_checkout_request_id=eq.${encodeURIComponent(CheckoutRequestID)}&select=*`
         );
+        if (!queryResult.ok) {
+          console.error("Could not retrieve order for Daraja callback:", queryResult.data);
+          return new Response(
+            JSON.stringify({ ResultCode: 1, ResultDesc: "Order lookup failed" }),
+            { status: 500, headers: corsHeaders }
+          );
+        }
         let order = null;
-        if (queryResult.ok && queryResult.data && queryResult.data.length > 0) {
+        if (queryResult.data && queryResult.data.length > 0) {
           order = queryResult.data[0];
         }
         if (!order) {
@@ -386,14 +475,32 @@ export default {
             { status: 200, headers: corsHeaders }
           );
         }
-        const newStatus = ResultCode === 0 ? "completed" : "failed";
-        let receiptNumber = null;
-        if (CallbackMetadata && CallbackMetadata.Item) {
-          const receiptItem = CallbackMetadata.Item.find(
-            (item) => item.Name === "MpesaReceiptNumber"
+        const verifiedResult = await queryDarajaStk(CheckoutRequestID);
+        if (String(verifiedResult.ResultCode) !== String(ResultCode)) {
+          console.warn("Daraja STK query result did not match callback; order left unchanged:", order.order_id);
+          return new Response(
+            JSON.stringify({ ResultCode: 1, ResultDesc: "Payment result could not be verified yet" }),
+            { status: 503, headers: corsHeaders }
           );
-          if (receiptItem) receiptNumber = receiptItem.Value;
         }
+        const callbackItems = CallbackMetadata?.Item || [];
+        const receiptNumber = callbackItems.find((item) => item.Name === "MpesaReceiptNumber")?.Value || null;
+        const callbackAmount = Number(callbackItems.find((item) => item.Name === "Amount")?.Value);
+        const expectedAmount = Number(
+          order.mpesa_amount_kes
+          ?? (order.currency === "KES" ? Math.round(Number(order.order_total)) : NaN)
+        );
+        if (
+          ResultCode === 0
+          && (!receiptNumber || !Number.isSafeInteger(callbackAmount) || callbackAmount !== expectedAmount)
+        ) {
+          console.error("Successful M-Pesa callback does not match the recorded order amount; order left pending:", order.order_id);
+          return new Response(
+            JSON.stringify({ ResultCode: 0, ResultDesc: "Accepted for reconciliation" }),
+            { status: 200, headers: corsHeaders }
+          );
+        }
+        const newStatus = ResultCode === 0 ? "completed" : "failed";
         const updateResult = await supabaseRequest(
           "PATCH",
           `orders?order_id=eq.${order.order_id}`,
@@ -445,7 +552,7 @@ export default {
           "GET",
           "orders",
           null,
-          `?order_id=eq.${encodeURIComponent(orderId)}&customer_email=eq.${encodeURIComponent(normalizedEmail)}&select=order_id,customer_email,status,delivery_status,pickup_station`
+          `?order_id=eq.${encodeURIComponent(orderId)}&customer_email=eq.${encodeURIComponent(normalizedEmail)}&select=order_id,customer_email,status,delivery_status,pickup_station,currency,order_total,mpesa_amount_kes`
         );
         const order = existing.data?.[0];
         if (!existing.ok) {
@@ -479,6 +586,9 @@ export default {
               status: order.status,
               delivery_status: order.delivery_status || "pending",
               pickup_station: normalizedStation,
+              currency: order.currency || "USD",
+              order_total: order.order_total,
+              mpesa_amount_kes: order.mpesa_amount_kes,
             },
           },
           200,
@@ -502,7 +612,7 @@ export default {
           "GET",
           "orders",
           null,
-          `?order_id=eq.${encodeURIComponent(orderId)}&customer_email=eq.${encodeURIComponent(email)}&select=order_id,status,delivery_status,pickup_station,created_at`
+          `?order_id=eq.${encodeURIComponent(orderId)}&customer_email=eq.${encodeURIComponent(email)}&select=order_id,status,delivery_status,pickup_station,currency,order_total,mpesa_amount_kes,created_at`
         );
         if (!result.ok) {
           return jsonResponse({ success: false, error: "Unable to look up this order." }, 502, corsHeaders);
