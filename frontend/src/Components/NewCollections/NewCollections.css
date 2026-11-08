@@ -1,0 +1,9 @@
+.new-collections {
+  margin-bottom: 80px;
+}
+
+.collections .item {
+  padding: 12px;
+  border-radius: 10px;
+  background: #fff;
+}

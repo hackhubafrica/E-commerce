@@ -1,0 +1,230 @@
+.navbar {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    width: 100%;
+    min-height: 76px;
+    padding: 12px clamp(20px, 5vw, 72px);
+    background: #fff;
+    box-shadow: 0 2px 12px rgb(0 0 0 / 7%);
+}
+
+.nav-logo {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 10px;
+    color: #282c34;
+    text-decoration: none;
+}
+
+.nav-logo img {
+    width: 42px;
+    height: 42px;
+    object-fit: contain;
+}
+
+.nav-logo span {
+    font-size: clamp(20px, 2vw, 28px);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+}
+
+.nav-menu {
+    display: flex;
+    align-items: center;
+    gap: clamp(20px, 3vw, 44px);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.nav-menu a {
+    position: relative;
+    display: block;
+    padding: 10px 0;
+    color: #383838;
+    font-size: 16px;
+    font-weight: 500;
+    text-decoration: none;
+}
+
+.nav-menu a::after {
+    position: absolute;
+    right: 0;
+    bottom: 3px;
+    left: 0;
+    height: 2px;
+    background: #ff4141;
+    content: "";
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 160ms ease;
+}
+
+.nav-menu a:hover::after,
+.nav-menu a.active::after {
+    transform: scaleX(1);
+}
+
+.nav-login-cart {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 20px;
+}
+
+.nav-login {
+    padding: 10px 22px;
+    border: 1px solid #d5d5d5;
+    border-radius: 999px;
+    background: #fff;
+    color: #383838;
+    font-size: 15px;
+    text-decoration: none;
+    transition: background-color 160ms ease;
+    cursor: pointer;
+}
+
+.nav-login:hover {
+    background: #f6f6f6;
+}
+
+.nav-cart {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 4px;
+}
+
+.nav-cart img {
+    display: block;
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+}
+
+.nav-cart-count {
+    position: absolute;
+    top: -4px;
+    right: -7px;
+    display: grid;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    place-items: center;
+    border-radius: 999px;
+    background: #ff4141;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.nav-dropdown {
+    display: none;
+}
+
+@media (max-width: 760px) {
+    .navbar {
+        min-height: 68px;
+        gap: 12px;
+        padding: 10px 18px;
+    }
+
+    .nav-dropdown {
+        display: grid;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        margin-left: auto;
+        padding: 8px;
+        place-items: center;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+    }
+
+    .nav-dropdown img {
+        width: 24px;
+        height: 24px;
+        object-fit: contain;
+        transform: rotate(-90deg);
+        transition: transform 160ms ease;
+    }
+
+    .nav-dropdown.open img {
+        transform: rotate(90deg);
+    }
+
+    .navbar nav {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        left: 0;
+    }
+
+    .nav-menu {
+        display: none;
+        align-items: stretch;
+        gap: 0;
+        padding: 8px 18px 14px;
+        border-top: 1px solid #eee;
+        background: #fff;
+        box-shadow: 0 8px 12px rgb(0 0 0 / 8%);
+    }
+
+    .nav-menu.nav-menu-visible {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .nav-menu a {
+        padding: 12px 4px;
+    }
+
+    .nav-menu a::after {
+        right: auto;
+        width: 42px;
+    }
+
+    .nav-login-cart {
+        gap: 14px;
+    }
+
+    .nav-cart-count {
+        right: -5px;
+    }
+}
+
+@media (max-width: 380px) {
+    .navbar {
+        gap: 6px;
+        padding-right: 12px;
+        padding-left: 12px;
+    }
+
+    .nav-login-cart {
+        gap: 12px;
+    }
+
+    .nav-logo {
+        gap: 6px;
+    }
+
+    .nav-logo span {
+        font-size: 18px;
+    }
+
+    .nav-logo img {
+        width: 34px;
+        height: 34px;
+    }
+
+    .nav-login {
+        padding: 8px 12px;
+    }
+}

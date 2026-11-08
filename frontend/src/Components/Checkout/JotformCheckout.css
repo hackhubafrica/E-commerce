@@ -1,0 +1,79 @@
+.checkout-page {
+  width: min(680px, calc(100% - 32px));
+  margin: 48px auto;
+}
+
+.checkout-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: clamp(24px, 5vw, 40px);
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 6%);
+}
+
+.checkout-eyebrow {
+  color: #777;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.checkout-card h1,
+.checkout-message h1 {
+  font-size: clamp(26px, 5vw, 36px);
+}
+
+.checkout-card > p:not(.checkout-eyebrow, .checkout-total, .checkout-error) {
+  color: #656565;
+  line-height: 1.6;
+}
+
+.checkout-card label {
+  margin-top: 8px;
+  font-weight: 600;
+}
+
+.checkout-card input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.checkout-total {
+  margin-top: 8px;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.checkout-card button {
+  min-height: 52px;
+  border: 0;
+  border-radius: 6px;
+  background: #ff4141;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.checkout-back,
+.checkout-message a {
+  color: #444;
+  text-align: center;
+}
+
+.checkout-error {
+  color: #a32121;
+}
+
+.checkout-message {
+  display: grid;
+  min-height: 45vh;
+  padding: 48px 24px;
+  place-content: center;
+  gap: 14px;
+  text-align: center;
+}

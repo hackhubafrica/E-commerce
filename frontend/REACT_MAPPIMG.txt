@@ -1,0 +1,23 @@
+npx create-react-app .
+
+npm install react-router-dom
+
+npm start
+
+
+
+Components
+	Assets
+	Navbar
+		Navbar.jsx
+		Navbar.css
+
+Context
+
+Pages
+	Shop.jsx
+	LoginSignup.jsx
+	ShopCategory.jsx
+	Product.jsx
+	Cart.jsx
+

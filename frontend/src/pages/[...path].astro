@@ -1,0 +1,44 @@
+---
+import Storefront from "../Storefront";
+import allProducts from "../Components/Assets/all_product";
+import "../index.css";
+
+export function getStaticPaths() {
+  const routes = [
+    "mens",
+    "womens",
+    "kids",
+    "cart",
+    "checkout",
+    "login",
+    "track",
+    ...allProducts.map((product) => `product/${product.id}`),
+  ];
+
+  return routes.map((path) => ({ params: { path } }));
+}
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="Shop the latest clothing collections for women, men, and kids."
+    />
+    <title>Shopper | Clothing for everyone</title>
+    <script is:inline define:vars={{
+      apiUrl: import.meta.env.PUBLIC_API_URL || '',
+      workerUrl: import.meta.env.PUBLIC_WORKER_URL || '',
+      jotformUrl: import.meta.env.PUBLIC_JOTFORM_URL || '',
+    }}>
+      window.SHOPPER_CONFIG = { apiUrl, workerUrl, jotformUrl };
+    </script>
+  </head>
+  <body>
+    <Storefront location={Astro.url.pathname} client:load />
+  </body>
+</html>

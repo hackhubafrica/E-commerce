@@ -1,0 +1,17 @@
+{
+  "name": "e-commerce-platform",
+  "private": true,
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=frontend",
+    "start": "npm run dev --workspace=frontend",
+    "build": "npm run build --workspace=frontend",
+    "preview": "npm run preview --workspace=frontend",
+    "test": "npm run test:frontend && npm run test:backend && npm run test:worker",
+    "test:frontend": "npm run test --workspace=frontend -- --watchAll=false",
+    "test:backend": "npm --prefix backend test",
+    "test:worker": "npm --prefix worker test"
+  }
+}

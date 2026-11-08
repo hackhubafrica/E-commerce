@@ -1,0 +1,8 @@
+{
+  "name": "e-commerce-payment-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

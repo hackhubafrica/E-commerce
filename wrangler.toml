@@ -1,0 +1,7 @@
+name = "ecommerce-payment-worker"
+main = "worker/index.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+CORS_ORIGIN = "https://hackhubafrica.github.io"
+WORKER_URL = "https://ecommerce-payment-worker.hackhubafrica.workers.dev"

@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files (contains secrets — NEVER commit)
+.env
+.env.dev
+.env.local
+.env.production
+.env.*.local
+
+# Build outputs
+dist/
+build/
+.astro/
+.next/
+out/
+.venv
+.database-api.json
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# TypeScript
+*.tsbuildinfo
+
+# Misc
+coverage/
+.nyc_output/
+.wrangler
+
+node_modules/
+dist/
+.env
+
+# node_modules
+frontend/node_modules/
+backend/node_modules/
+
+node_modules/
+**/node_modules/
+dist/
+build/
+.astro/
+.venv/
+.wrangler/
+node_modules
+backend/package.json
+frontend/node_modules/*

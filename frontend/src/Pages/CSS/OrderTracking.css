@@ -1,0 +1,107 @@
+.order-tracking {
+  width: min(680px, calc(100% - 32px));
+  margin: 48px auto;
+}
+
+.tracking-card {
+  padding: clamp(24px, 5vw, 40px);
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 6%);
+}
+
+.tracking-eyebrow {
+  color: #777;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.tracking-card h1 {
+  margin: 8px 0;
+  font-size: clamp(26px, 5vw, 36px);
+}
+
+.tracking-card > p:not(.tracking-eyebrow, .tracking-error, .tracking-success) {
+  color: #656565;
+  line-height: 1.6;
+}
+
+.tracking-search,
+.tracking-change {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.tracking-search label,
+.tracking-change label {
+  font-weight: 600;
+}
+
+.tracking-search input,
+.tracking-change input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+.tracking-search button,
+.tracking-change button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 6px;
+  background: #ff4141;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tracking-search button:disabled,
+.tracking-change button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.tracking-error,
+.tracking-success {
+  margin-top: 16px;
+}
+
+.tracking-error {
+  color: #a32121;
+}
+
+.tracking-success {
+  color: #176b3a;
+}
+
+.tracking-result {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid #e8e8e8;
+}
+
+.tracking-result dl {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.tracking-result dl > div {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 2fr;
+  gap: 16px;
+}
+
+.tracking-result dt {
+  color: #666;
+}
+
+.tracking-result dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}

@@ -1,0 +1,88 @@
+.loginsignup {
+    min-height: 65vh;
+    padding: clamp(36px, 8vh, 80px) 16px;
+    background: #fce3fe;
+}
+
+.loginsignup-container {
+    width: min(100%, 480px);
+    margin: 0 auto;
+    padding: clamp(24px, 6vw, 48px);
+    border-radius: 12px;
+    background-color: white;
+    box-shadow: 0 12px 36px rgb(40 20 40 / 10%);
+}
+
+.loginsignup-container h1 {
+    margin: 0 0 24px;
+}
+
+.loginsignup-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.loginsignup-fields input {
+    width: 100%;
+    min-height: 54px;
+    padding: 0 16px;
+    border: 1px solid #c9c9c9;
+    border-radius: 6px;
+    color: #5c5c5c;
+    font-size: 15px;
+}
+
+.loginsignup-container form > button {
+    width: 100%;
+    min-height: 54px;
+    margin-top: 20px;
+    border: 0;
+    border-radius: 8px;
+    color: white;
+    background: #ff4141;
+    font-size: 20px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.loginsignup-container form > button:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.loginsignup-login {
+    margin-top: 20px;
+    color: #5c5c5c;
+    font-size: 15px;
+}
+
+.loginsignup-toggle {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #ff4141;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.loginsignup-message {
+    margin-top: 16px;
+    line-height: 1.5;
+}
+
+.error-message {
+    color: #a32121;
+}
+
+.success-message {
+    color: #176b3a;
+}
+
+.loginsignup-password-note {
+    margin-top: 12px;
+    color: #707070;
+    font-size: 13px;
+}
