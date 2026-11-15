@@ -501,11 +501,13 @@ export default {
           );
         }
         const newStatus = ResultCode === 0 ? "completed" : "failed";
+        const newDeliveryStatus = ResultCode === 0 ? "processing" : "cancelled";
         const updateResult = await supabaseRequest(
           "PATCH",
           `orders?order_id=eq.${order.order_id}`,
           {
             status: newStatus,
+            delivery_status: newDeliveryStatus,
             transaction_reference: receiptNumber,
           }
         );
@@ -527,6 +529,55 @@ export default {
           JSON.stringify({ ResultCode: 1, ResultDesc: "Error" }),
           { status: 500, headers: corsHeaders }
         );
+      }
+    }
+
+    // ------------------------------------------------------------------
+    // Route: GET /api/mpesa/status/:orderId  (Poll STK Push status)
+    // ------------------------------------------------------------------
+    const mpesaStatusMatch = path.match(/^\\/api\\/mpesa\\/status\\/([^\\/]+)$/);
+    if (mpesaStatusMatch && request.method === "GET") {
+      try {
+        const orderId = decodeURIComponent(mpesaStatusMatch[1]);
+        const email = String(url.searchParams.get("email") || "").trim().toLowerCase();
+        if (!email) {
+          return jsonResponse({ success: false, error: "Checkout email is required." }, 400, corsHeaders);
+        }
+
+        const result = await supabaseRequest(
+          "GET",
+          "orders",
+          null,
+          `?order_id=eq.${encodeURIComponent(orderId)}&customer_email=eq.${encodeURIComponent(email)}&select=order_id,status,payment_status,delivery_status,mpesa_amount_kes,daraja_checkout_request_id,created_at`
+        );
+        if (!result.ok) {
+          return jsonResponse({ success: false, error: "Unable to look up this order." }, 502, corsHeaders);
+        }
+        if (!result.data || result.data.length === 0) {
+          return jsonResponse({ success: false, error: "Order reference or email was not recognized." }, 404, corsHeaders);
+        }
+
+        const order = result.data[0];
+        const now = new Date();
+        const createdAt = new Date(order.created_at);
+        const minutesSinceCreated = (now - createdAt) / (1000 * 60);
+        const isExpired = order.status === "pending" && minutesSinceCreated > 30;
+
+        return jsonResponse({
+          success: true,
+          order: {
+            order_id: order.order_id,
+            status: order.status,
+            delivery_status: order.delivery_status || "pending",
+            mpesa_amount_kes: order.mpesa_amount_kes,
+            checkout_request_id: order.daraja_checkout_request_id,
+            is_expired: isExpired,
+            minutes_since_created: Math.round(minutesSinceCreated),
+          },
+        }, 200, corsHeaders);
+      } catch (error) {
+        console.error("M-Pesa status lookup error:", error);
+        return jsonResponse({ success: false, error: "Unable to look up order status." }, 500, corsHeaders);
       }
     }
 

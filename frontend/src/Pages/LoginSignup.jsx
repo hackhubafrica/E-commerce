@@ -19,6 +19,7 @@ const LoginSignup = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const toggleState = () => {
     setState((currentState) => (currentState === 'Login' ? 'Signup' : 'Login'));
@@ -76,9 +77,15 @@ const LoginSignup = () => {
         throw new Error(data.errors || data.error || 'Unable to complete your request.');
       }
 
-      localStorage.setItem('token', data.token);
-      window.dispatchEvent(new Event('shopper-auth-change'));
-      setSuccessMessage(state === 'Login' ? 'You are now logged in.' : 'Your account has been created.');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('token', data.token);
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('shopper-auth-change'));
+      }
+      if (typeof window !== 'undefined') {
+        setSuccessMessage(state === 'Login' ? 'You are now logged in.' : 'Your account has been created.');
+      }
       setFormData((currentData) => ({ ...currentData, password: '' }));
     } catch (error) {
       setErrorMessage(
@@ -197,6 +204,8 @@ const LoginSignup = () => {
             >
               {authMethod === 'phone' ? 'Use email and password' : 'Continue with phone'}
             </button>
+            <button>Don't have an account? <a href="/register">Create account</a><button>
+            <button>Forgot password? <a href="/reset-password">Reset password</a></button>
           </div>
         )}
 

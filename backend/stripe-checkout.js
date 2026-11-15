@@ -94,6 +94,10 @@ function createStripeCheckoutHandlers({
     if (!Number.isSafeInteger(shippingAmountCents) || shippingAmountCents < 0) {
       return sendError(res, 503, "The store has not configured a valid shipping charge.");
     }
+    const baseUrl = String(config.storefrontUrl || "").replace(/\/+$/, "");
+    if (!baseUrl || !/^https:\/\//.test(baseUrl)) {
+      return sendError(res, 503, "The store has not configured a public storefront URL for card checkout.");
+    }
 
     try {
       const cart = req.body?.items;
@@ -140,7 +144,6 @@ function createStripeCheckoutHandlers({
       });
 
       try {
-        const baseUrl = String(config.storefrontUrl || "").replace(/\/+$/, "");
         const session = await stripe.checkout.sessions.create({
           mode: "payment",
           payment_method_types: ["card"],

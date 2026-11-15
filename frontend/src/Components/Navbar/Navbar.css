@@ -75,6 +75,34 @@
     flex-shrink: 0;
     align-items: center;
     gap: 20px;
+.nav-profile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #fff;
+  border: 1px solid #d5d5d5;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.nav-profile-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #383838;
+  white-space: nowrap;
+}
+
+.nav-profile-link {
+  display: flex;
+  align-items: center;
+  border-radius: 999px;
+  transition: background-color 160ms ease;
+}
+
+.nav-profile-link:hover {
+  background: #f6f6f6;
+}
 }
 
 .nav-login {

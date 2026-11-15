@@ -69,6 +69,11 @@
     opacity: .7;
 }
 
+.cj-result button:disabled {
+    cursor: wait;
+    opacity: .7;
+}
+
 .cj-importer > label,
 .cj-result label {
     display: block;

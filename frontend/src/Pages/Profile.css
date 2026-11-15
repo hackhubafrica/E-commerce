@@ -1,0 +1,135 @@
+.profile-page {
+  max-width: 720px;
+  margin: 48px auto;
+  padding: 0 24px;
+}
+
+.profile-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.profile-header h1 {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+
+.profile-status {
+  color: #444;
+  margin-bottom: 16px;
+}
+
+.profile-card {
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  padding: 28px;
+  margin-bottom: 24px;
+}
+
+.profile-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-field label {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.profile-field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 16px;
+}
+
+.profile-field input:focus {
+  outline: none;
+  border-color: #ff4141;
+  box-shadow: 0 0 0 3px rgba(255, 65, 65, 0.1);
+}
+
+.profile-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.profile-btn {
+  min-height: 48px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 6px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.profile-btn-save {
+  background: #ff4141;
+  color: #fff;
+}
+
+.profile-btn-save:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.profile-btn-delete {
+  background: transparent;
+  color: #a32121;
+  border: 1px solid #a32121;
+}
+
+.profile-btn-delete:hover {
+  background: #ffeaea;
+}
+
+.profile-btn-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.profile-info-box {
+  background: #fafafa;
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.profile-info-box h2 {
+  font-size: 18px;
+  margin-bottom: 12px;
+}
+
+.profile-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 16px;
+  font-size: 14px;
+}
+
+.profile-details div {
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.profile-details dt {
+  font-weight: 600;
+  color: #777;
+}
+
+.profile-details dd {
+  margin: 0;
+  font-weight: 500;
+}

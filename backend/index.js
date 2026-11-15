@@ -9,9 +9,11 @@ const cors = require("cors");
 const { rateLimit } = require("express-rate-limit");
 const Stripe = require("stripe");
 const firebaseAdmin = require("firebase-admin");
+const { getAuth } = require("firebase-admin/auth");
 const { hashPassword, verifyPassword } = require("./auth-utils");
 const { createAdminAuth, verifyAdminCredentials } = require("./admin-auth");
 const { createStripeCheckoutHandlers } = require("./stripe-checkout");
+const { createStablecoinCheckoutHandlers } = require("./stablecoin-checkout");
 const { createCJClient } = require("./cj-catalog");
 const { createFirebaseLoginHandler } = require("./firebase-auth");
 
@@ -23,7 +25,7 @@ fs.mkdirSync(uploadDirectory, { recursive: true });
 app.use(express.json({
   limit: "1mb",
   verify(req, res, buffer) {
-    if (req.originalUrl.startsWith("/api/payments/stripe/webhook")) {
+    if (req.originalUrl.startsWith("/api/payments/stripe/webhook") || req.originalUrl.startsWith("/api/payments/stablecoin/webhook")) {
       req.rawBody = Buffer.from(buffer);
     }
   },
@@ -51,12 +53,12 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
     const serviceAccount = JSON.parse(
       Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64").toString("utf8"),
     );
-    if (!firebaseAdmin.apps.length) {
+    if (!firebaseAdmin.getApps().length) {
       firebaseAdmin.initializeApp({
-        credential: firebaseAdmin.credential.cert(serviceAccount),
+        credential: firebaseAdmin.cert(serviceAccount),
       });
     }
-    firebaseAuth = firebaseAdmin.auth();
+    firebaseAuth = getAuth(firebaseAdmin.getApp());
   } catch (error) {
     throw new Error(`FIREBASE_SERVICE_ACCOUNT_BASE64 is invalid: ${error.message}`);
   }
@@ -348,7 +350,7 @@ const stripeHandlers = createStripeCheckoutHandlers({
     allowedShippingCountries: process.env.STRIPE_ALLOWED_SHIPPING_COUNTRIES,
     shippingAmountCents: process.env.STRIPE_SHIPPING_AMOUNT_CENTS,
     shippingLabel: process.env.STRIPE_SHIPPING_LABEL,
-    storefrontUrl: process.env.PUBLIC_STOREFRONT_URL || "http://localhost:4321",
+    storefrontUrl: process.env.PUBLIC_STOREFRONT_URL,
   },
   checkSupplierAvailability: async (items, countryCode) => {
     const checkedProducts = new Map();
@@ -370,8 +372,44 @@ const stripeHandlers = createStripeCheckoutHandlers({
 });
 const cjClient = createCJClient({ apiKey: process.env.CJ_API_KEY });
 
+const stablecoinHandlers = createStablecoinCheckoutHandlers({
+  Product,
+  Order,
+  config: {
+    provider: process.env.STABLECOIN_PROVIDER || "coinbase",
+    apiKey: process.env.STABLECOIN_API_KEY,
+    webhookSecret: process.env.STABLECOIN_WEBHOOK_SECRET,
+    defaultCurrency: process.env.STABLECOIN_DEFAULT_CURRENCY || "USDC",
+    defaultNetwork: process.env.STABLECOIN_DEFAULT_NETWORK || "ethereum",
+    usdToLocalRate: process.env.STABLECOIN_USD_TO_LOCAL_RATE,
+    storefrontUrl: process.env.PUBLIC_STOREFRONT_URL,
+    allowedShippingCountries: process.env.STRIPE_ALLOWED_SHIPPING_COUNTRIES,
+    shippingAmountCents: process.env.STRIPE_SHIPPING_AMOUNT_CENTS,
+    shippingLabel: process.env.STRIPE_SHIPPING_LABEL,
+  },
+  checkSupplierAvailability: async (items, countryCode) => {
+    const checkedProducts = new Map();
+    for (const item of items.filter((cartItem) => cartItem.supplier === "cj")) {
+      if (!checkedProducts.has(item.supplierProductId)) {
+        const variants = await cjClient.getProductVariants(item.supplierProductId, countryCode);
+        checkedProducts.set(item.supplierProductId, variants);
+      }
+      const variant = checkedProducts.get(item.supplierProductId)
+        .find((candidate) => candidate.id === item.supplierVariantId);
+      if (!variant || variant.inventory < item.quantity) {
+        throw new Error(`${item.name} is not currently available in the selected country.`);
+      }
+      if (variant.cost > item.unitAmount / 100) {
+        throw new Error(`${item.name} supplier price has increased. The store must review its retail price.`);
+      }
+    }
+  },
+});
+
 app.post("/api/checkout/stripe", checkoutLimiter, stripeHandlers.createCheckout);
 app.post("/api/payments/stripe/webhook", stripeHandlers.stripeWebhook);
+app.post("/api/checkout/stablecoin", checkoutLimiter, stablecoinHandlers.createCheckout);
+app.post("/api/payments/stablecoin/webhook", stablecoinHandlers.stablecoinWebhook);
 
 app.get("/admin/cj/products", requireAdmin, async (req, res) => {
   try {
@@ -480,32 +518,115 @@ app.post("/addproduct", requireAdmin, async (req, res) => {
   const { image, category } = req.body;
   const newPrice = Number(req.body.new_price);
   const oldPrice = Number(req.body.old_price);
-  if (
-    !name || name.length > 160 || !image
-    || !["women", "men", "kid", "office", "home", "pets", "beauty", "travel", "fitness"].includes(category)
-    || !Number.isFinite(newPrice) || newPrice <= 0
-    || !Number.isFinite(oldPrice) || oldPrice < newPrice
-  ) {
-    return res.status(400).json({ success: false, message: "Enter a name, image, category, and valid prices." });
+  const errors = [];
+
+  if (!name) errors.push("name is required.");
+  else if (name.length > 160) errors.push("name cannot exceed 160 characters.");
+  if (!image) errors.push("image is required.");
+  if (!category || !["women", "men", "kid", "office", "home", "pets", "beauty", "travel", "fitness"].includes(category)) {
+    errors.push("category must be one of: women, men, kid, office, home, pets, beauty, travel, fitness.");
   }
+  if (!Number.isFinite(newPrice) || newPrice <= 0) errors.push("new price must be a positive number.");
+  if (!Number.isFinite(oldPrice) || oldPrice < newPrice) errors.push("old price must be a number greater than or equal to the new price.");
+
+  if (errors.length > 0) {
+    return res.status(400).json({ success: false, message: "Validation failed.", errors });
+  }
+
   try {
     const product = await Product.create({
-      id: Date.now(),
       name,
       image,
       category,
       new_price: newPrice,
       old_price: oldPrice,
     });
-    res.status(201).json({ success: true, product: product.toObject() });
+    res.status(201).json({ success: true, product: { ...product.toObject(), id: String(product._id) } });
   } catch (error) {
     console.error("Error saving product:", error);
     res.status(500).json({ success: false, message: "Error saving product." });
   }
 });
 
+// Get a single product (for editing)
+app.get("/addproduct/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid product ID." });
+    }
+    const product = await Product.findById(id).lean();
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found." });
+    }
+    return res.json({ success: true, product: { ...product, id: String(product._id) } });
+  } catch (error) {
+    console.error("Error fetching product:", error);
+    res.status(500).json({ success: false, message: "Error fetching product." });
+  }
+});
 
-// Assuming you have already defined express, app, Product model, etc.
+// Update a product (full replacement)
+app.put("/addproduct/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid product ID." });
+    }
+    const name = String(req.body.name || "").trim();
+    const { image, category, available } = req.body;
+    const newPrice = Number(req.body.new_price);
+    const oldPrice = Number(req.body.old_price);
+    if (
+      !name || name.length > 160 || !image
+      || !["women", "men", "kid", "office", "home", "pets", "beauty", "travel", "fitness"].includes(category)
+      || !Number.isFinite(newPrice) || newPrice <= 0
+      || !Number.isFinite(oldPrice) || oldPrice < newPrice
+    ) {
+      return res.status(400).json({ success: false, message: "Enter a name, image, category, and valid prices." });
+    }
+    const product = await Product.findByIdAndUpdate(
+      id,
+      { name, image, category, new_price: newPrice, old_price: oldPrice, available: available !== false },
+      { new: true, runValidators: true }
+    ).lean();
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found." });
+    }
+    return res.json({ success: true, product: { ...product, id: String(product._id) } });
+  } catch (error) {
+    console.error("Error updating product:", error);
+    res.status(500).json({ success: false, message: "Error updating product." });
+  }
+});
+
+// Partial update a product (e.g. toggle availability)
+app.patch("/addproduct/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({ success: false, message: "Invalid product ID." });
+    }
+    const updates = {};
+    if (req.body.name !== undefined) updates.name = String(req.body.name).trim();
+    if (req.body.image !== undefined) updates.image = req.body.image;
+    if (req.body.category !== undefined) updates.category = req.body.category;
+    if (req.body.new_price !== undefined) updates.new_price = Number(req.body.new_price);
+    if (req.body.old_price !== undefined) updates.old_price = Number(req.body.old_price);
+    if (req.body.available !== undefined) updates.available = req.body.available === true || req.body.available === "true";
+
+    const product = await Product.findByIdAndUpdate(id, updates, { new: true, runValidators: true }).lean();
+    if (!product) {
+      return res.status(404).json({ success: false, message: "Product not found." });
+    }
+    return res.json({ success: true, product: { ...product, id: String(product._id) } });
+  } catch (error) {
+    console.error("Error patching product:", error);
+    res.status(500).json({ success: false, message: "Error updating product." });
+  }
+});
+
+// Remove a product
 app.post("/removeproduct", requireAdmin, async (req, res) => {
   try {
     const id = String(req.body.id || "");
@@ -742,6 +863,103 @@ app.post(
   providerLoginLimiter,
   createFirebaseLoginHandler({ firebaseAuth, Users, jwt, jwtSecret }),
 );
+
+// ── User profile endpoints (Firebase/JWT authentication) ────────────────
+
+app.get(
+  "/api/user/me",
+  createAdminAuth(jwt, jwtSecret),
+  async (req, res) => {
+    try {
+      const user = await Users.findById(req.admin.userId || req.admin._id).lean();
+      if (!user) {
+        return res.status(404).json({ success: false, error: "User not found." });
+      }
+      const { password, ...safeUser } = user.toObject();
+      res.json({ success: true, user: safeUser });
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+      res.status(500).json({ success: false, error: "Unable to fetch profile." });
+    }
+  }
+);
+// ── Forgot Password Endpoint ────────────────────────────────────────
+
+app.post(
+  "/api/user/forgot-password",
+  async (req, res) => {
+    try {
+      const email = req.body.email;
+      if (!email) {
+        return res.status(400).json({ success: false, error: "Email is required." });
+      }
+
+      if (!firebaseAuth) {
+        return res.status(503).json({ success: false, error: "Auth service not configured." });
+      }
+
+      await firebaseAuth.sendPasswordResetEmail(email);
+      res.json({ success: true, message: "Password reset email sent." });
+    } catch (error) {
+      console.error("Forgot password error:", error);
+      if (error.code === "auth/user-not-found") {
+        return res.status(404).json({ success: false, error: "User with this email not found." });
+      }
+      res.status(500).json({ success: false, error: "Unable to send reset email." });
+    }
+  }
+);
+
+
+app.patch(
+  "/api/user/me",
+  createAdminAuth(jwt, jwtSecret),
+  async (req, res) => {
+    try {
+      const updates = {};
+      if (req.body.name !== undefined) updates.name = String(req.body.name).trim();
+      if (req.body.email !== undefined) updates.email = String(req.body.email).trim().toLowerCase();
+      if (req.body.phone !== undefined) updates.phone = String(req.body.phone).trim();
+
+      const allowedUpdates = ["name", "email", "phone"];
+      for (const key of allowedUpdates) {
+        if (req.body[key] !== undefined && !allowedUpdates.includes(key)) {
+          return res.status(400).json({ success: false, error: `Cannot update field: ${key}` });
+        }
+      }
+
+      const user = await Users.findByIdAndUpdate(req.admin.userId || req.admin._id, updates, { new: true, runValidators: true }).lean();
+      if (!user) {
+        return res.status(404).json({ success: false, error: "User not found." });
+      }
+
+      const { password, ...safeUser } = user;
+      res.json({ success: true, user: safeUser });
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      res.status(500).json({ success: false, error: "Unable to update profile." });
+    }
+  }
+);
+
+app.delete(
+  "/api/user/me",
+  createAdminAuth(jwt, jwtSecret),
+  async (req, res) => {
+    try {
+      const user = await Users.findByIdAndDelete(req.admin.userId || req.admin._id);
+      if (!user) {
+        return res.status(404).json({ success: false, error: "User not found." });
+      }
+      res.json({ success: true, message: "Account deleted." });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ success: false, error: "Unable to delete account." });
+    }
+  }
+);
+
+
 
 
 

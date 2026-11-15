@@ -150,12 +150,45 @@ Stripe. Set these **backend-only** settings from Stripe's test-mode dashboard:
   charge displayed by Stripe; configure a rate you have actually verified)
 - `PUBLIC_STOREFRONT_URL`
 
-For local testing, use the Stripe CLI to forward
-`/api/payments/stripe/webhook` to the local API and use the webhook secret it
-prints. The endpoint verifies Stripe signatures and only marks an order paid
-when Stripe reports a successful payment with the exact stored amount and
-currency. The admin **Paid orders** list only contains these confirmed orders.
-It is a review queue; placing an order with CJ is deliberately not automatic.
+For this hosted Checkout flow, use your rotated `sk_test_...` secret in
+`backend/.env`; the `pk_test_...` publishable key is not used by the app. Never
+paste either key into source code or `frontend/.env`. Rotate any key shared in
+chat or committed to Git. `STRIPE_WEBHOOK_SECRET` is a separate `whsec_...`
+value supplied by Stripe CLI for local testing.
+
+For local testing on Linux, install the Stripe CLI using Stripe's official
+installer:
+
+```bash
+curl -fsSL https://cli.stripe.com/install.sh | sh
+```
+
+The installer adds its per-user binary directory to your shell path; open a
+new terminal (or reload `~/.zshrc` in zsh), then verify and authenticate:
+
+```bash
+stripe --version
+stripe login
+stripe switch
+```
+
+When prompted, choose your Stripe sandbox (test mode), not live mode.
+Keep the CLI running in its own terminal to forward
+`/api/payments/stripe/webhook` to the local API:
+
+```bash
+stripe listen \
+  --forward-to localhost:4000/api/payments/stripe/webhook \
+  --events checkout.session.completed,checkout.session.async_payment_succeeded,\
+checkout.session.async_payment_failed,checkout.session.expired
+```
+
+Copy the `whsec_...` it prints into `STRIPE_WEBHOOK_SECRET` in
+`backend/.env`, then restart the backend. The endpoint verifies Stripe
+signatures and only marks an order paid when Stripe reports a successful
+payment with the exact stored amount and currency. The admin **Paid orders**
+list only contains these confirmed orders. It is a review queue; placing an
+order with CJ is deliberately not automatic.
 Before supplier ordering is automated, configure product variants, a supported
 shipping method, destination validation, inventory checks, and an explicit
 supplier-account payment policy.
@@ -176,6 +209,50 @@ creation, and shipping workflows. This project's current CJ integration only
 searches/imports products and checks variant stock/cost for the selected
 destination immediately before checkout. It does not periodically sync the
 catalog, calculate the supplier's shipping price, or place supplier orders.
+
+#### Local end-to-end test
+
+1. If `backend/.env` does not exist yet, create it from `backend/.env.example`.
+   If it already exists, edit it without overwriting your existing settings.
+2. Add the newly rotated CJ key to `backend/.env` as `CJ_API_KEY=...`. Never
+   put it in `frontend/.env`, a source file, a screenshot, or a chat message.
+   The backend `.env` is ignored by Git; still verify it is not staged before
+   committing.
+3. Configure `MONGODB_URI`, `JWT_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD`
+   in `backend/.env`. For Atlas, allow your current public IP in the cluster's
+   Network Access settings and use the database user's connection string.
+   Verify Atlas connectivity with MongoDB Compass or by checking that the
+   backend logs `MongoDB connected successfully!` when it starts.
+4. From the repository root, install dependencies if needed with
+   `npm ci`, `npm install --prefix backend`, and `npm install --prefix admin`.
+   Start the backend with `npm --prefix backend start`, the storefront with
+   `npm run dev`, and the admin with `npm --prefix admin run dev`, each in its
+   own terminal. Open `http://localhost:4321` and the admin URL
+   `http://localhost:5173`.
+5. In the admin, sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, open **Add
+   Products**, search CJ, choose a product and variant, set a retail price,
+then import it. Refresh the storefront and find it under **Office & desk**
+(`http://localhost:4321/office`) or **Shop all**
+(`http://localhost:4321/catalog`), then verify it can be added to the cart.
+This only imports catalog data; it does not order from CJ.
+6. To test card checkout, configure Stripe **test-mode** credentials,
+   `STRIPE_ALLOWED_SHIPPING_COUNTRIES`, a verified test shipping amount and
+   label, and `PUBLIC_STOREFRONT_URL=http://localhost:4321` in
+   `backend/.env`. In another terminal, run
+   `stripe listen --forward-to localhost:4000/api/payments/stripe/webhook`,
+   copy its printed `whsec_...` into `STRIPE_WEBHOOK_SECRET`, and restart the
+   backend. Use only a Stripe test card, such as `4242 4242 4242 4242`, on the
+   hosted Stripe test checkout. Confirm that the completed payment appears in
+   the admin's **Paid orders** review list. Do not use a real card for this test.
+7. Test email/password registration and login from **Log in**. Order tracking
+   can be checked with the order ID and email used in the test checkout.
+   Firebase phone/social sign-in additionally needs Firebase/provider setup as
+   described under Customer logins.
+
+Checkout stays disabled until Stripe keys and a non-empty shipping amount are
+configured. A paid Stripe order is only queued for manual supplier review;
+the application does not currently submit orders to CJ. M-Pesa remains on the
+separate legacy Worker flow and is not integrated into this checkout.
 
 ### M-Pesa and account options
 

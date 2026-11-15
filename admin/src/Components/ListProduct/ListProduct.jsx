@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import PropTypes from 'prop-types';
 import './ListProduct.css'
 import cross_icon from '../../assets/cross_icon.png'
+import edit_icon from '../../assets/edit_icon.svg'
 import { adminRequest, API_URL } from '../../api'
 
-const ListProduct = ({ token }) => {
+const ListProduct = ({ token, onEdit }) => {
     const [allProducts, setAllProducts] = useState([]);
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(true);
@@ -42,6 +43,10 @@ const ListProduct = ({ token }) => {
         }
     };
 
+    const editProduct = (product) => {
+        if (onEdit) onEdit(product);
+    };
+
 
 return (
     <div className="list-product">
@@ -52,6 +57,7 @@ return (
             <p>Old Price</p>
             <p>New Price</p>
             <p>Category</p>
+            <p>Edit</p>
             <p>Remove</p>
         </div>
         <div className="listproduct-allproducts">
@@ -66,6 +72,9 @@ return (
                     <p>${product.old_price}</p>
                     <p>${product.new_price}</p>
                     <p>{product.category}</p>
+                    <button type="button" className="listproduct-edit-button" onClick={() => editProduct(product)} aria-label={`Edit ${product.name}`}>
+                        <img src={edit_icon} alt="" className='listproduct-edit-icon' />
+                    </button>
                     <button type="button" className="listproduct-remove-button" onClick={() => removeProduct(product.id)} aria-label={`Remove ${product.name}`}>
                         <img src={cross_icon} alt="" className='listproduct-remove-icon' />
                     </button>

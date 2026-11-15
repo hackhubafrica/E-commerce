@@ -7,11 +7,16 @@ import getImageSrc from '../utils/getImageSrc'
 
 const ShopCategory = (props) => {
     const { all_product, catalogError } = useContext(ShopContext);
-    const products = all_product.filter((item) => props.category === item.category);
+    const products = props.category
+        ? all_product.filter((item) => props.category === item.category)
+        : all_product;
+    const title = props.title || `${props.category} collection`;
 
     return (
         <div className="shop-category">
-            <img className="shopcategory-banner" src={getImageSrc(props.banner)} alt={`${props.category} clothing collection`} />
+            {props.banner
+                ? <img className="shopcategory-banner" src={getImageSrc(props.banner)} alt={`${props.category} clothing collection`} />
+                : <h1 className="shopcategory-title">{title}</h1>}
             <div className="shopcategory-IndexSort">
                 <p>
                     <span>Showing {products.length} products</span>
@@ -22,6 +27,7 @@ const ShopCategory = (props) => {
             </div>
             <div className="shopcategory-products">
             {catalogError && <p role="status">{catalogError}</p>}
+            {!products.length && <p className="shopcategory-empty">No products in this collection yet.</p>}
             {products.map((item) => (
                                 <Item
                                     key={item.id}

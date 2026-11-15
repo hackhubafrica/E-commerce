@@ -6,6 +6,7 @@ import ShopCategory from './Pages/ShopCategory';
 import Product from './Pages/Product';
 import Cart from './Pages/Cart';
 import LoginSignup from './Pages/LoginSignup';
+import Profile from './Pages/Profile';
 import OrderTracking from './Pages/OrderTracking';
 import JotformCheckout from './Components/Checkout/JotformCheckout';
 import Footer from './Components/Footer/Footer';
@@ -20,6 +21,8 @@ function App({ location = '/' }) {
       <Navbar />
       <Routes>
         <Route path="/" element={<Shop />} />
+        <Route path="/catalog" element={<ShopCategory title="All products" />} />
+        <Route path="/office" element={<ShopCategory category="office" title="Office & desk" />} />
         <Route path="/mens" element={<ShopCategory banner={men_banner} category="men" />} />
         <Route path="/womens" element={<ShopCategory banner={women_banner} category="women" />} />
         <Route path="/kids" element={<ShopCategory banner={kid_banner} category="kid" />} />
@@ -28,7 +31,9 @@ function App({ location = '/' }) {
         <Route path="/cart" element={<Cart />} />
         <Route path="/checkout" element={<JotformCheckout />} />
         <Route path="/login" element={<LoginSignup />} />
+        <Route path="/profile" element={<Profile />} />
         <Route path="/track" element={<OrderTracking />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
       </Routes>
       <Footer />
     </div>

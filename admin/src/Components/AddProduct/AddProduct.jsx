@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import './AddProduct.css'
 import upload_area from '../../assets/upload_area.svg'
@@ -11,8 +11,11 @@ const emptyProduct = {
     old_price: "",
 };
 
-const AddProduct = ({ token }) => {
+const AddProduct = ({ token, editingProduct, onEditComplete }) => {
     const [image, setImage] = useState(null);
+    const [imageFile, setImageFile] = useState(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editingProductId, setEditingProductId] = useState(null);
     const [productDetails, setProductDetails] = useState(emptyProduct);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [message, setMessage] = useState("");
@@ -26,12 +29,36 @@ const AddProduct = ({ token }) => {
     const [cjSelectedVariants, setCjSelectedVariants] = useState({});
     const [loadingVariants, setLoadingVariants] = useState("");
     const [cjError, setCjError] = useState("");
+    const [cjMessage, setCjMessage] = useState("");
     const [isSearchingCJ, setIsSearchingCJ] = useState(false);
+    const [importingCJProduct, setImportingCJProduct] = useState("");
+
+    useEffect(() => {
+        if (editingProduct) {
+            setIsEditing(true);
+            setEditingProductId(editingProduct.id);
+            setProductDetails({
+                name: editingProduct.name || "",
+                category: editingProduct.category || "women",
+                new_price: String(editingProduct.new_price || ""),
+                old_price: String(editingProduct.old_price || ""),
+            });
+            setImage(null);
+            setImageFile(null);
+        } else {
+            setIsEditing(false);
+            setEditingProductId(null);
+            setProductDetails(emptyProduct);
+            setImage(null);
+            setImageFile(null);
+        }
+    }, [editingProduct]);
 
     const searchCJ = async (event) => {
         event.preventDefault();
         setIsSearchingCJ(true);
         setCjError("");
+        setCjMessage("");
         try {
             const query = new URLSearchParams({ q: cjKeyword.trim() });
             const result = await adminRequest(`/admin/cj/products?${query}`, token);
@@ -49,6 +76,7 @@ const AddProduct = ({ token }) => {
     const loadVariants = async (product) => {
         setLoadingVariants(product.id);
         setCjError("");
+        setCjMessage("");
         try {
             const result = await adminRequest(
                 `/admin/cj/products/${encodeURIComponent(product.id)}/variants`,
@@ -75,6 +103,8 @@ const AddProduct = ({ token }) => {
             return;
         }
         setCjError("");
+        setCjMessage("");
+        setImportingCJProduct(product.id);
         try {
             await adminRequest("/admin/cj/import", token, {
                 method: "POST",
@@ -87,9 +117,11 @@ const AddProduct = ({ token }) => {
                 }),
             });
             setCjProducts((current) => current.filter((item) => item.id !== product.id));
-            setMessage(`${product.name} was added to your store. Review shipping and variant details before selling.`);
+            setCjMessage(`${product.name} was added. Refresh the storefront and open Office & desk or Shop all to see it.`);
         } catch (requestError) {
             setCjError(requestError instanceof Error ? requestError.message : "Unable to import this product.");
+        } finally {
+            setImportingCJProduct("");
         }
     };
 
@@ -99,28 +131,48 @@ const AddProduct = ({ token }) => {
 
     const addProduct = async (event) => {
         event.preventDefault();
-        if (!image) {
-            setError("Choose a product image.");
-            return;
-        }
         setIsSubmitting(true);
         setError("");
         setMessage("");
         try {
-            const formData = new FormData();
-            formData.append("product", image);
-            const uploadData = await adminRequest("/upload", token, { method: "POST", body: formData });
-            await adminRequest("/addproduct", token, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ...productDetails, image: uploadData.image_url }),
-            });
-            setProductDetails(emptyProduct);
-            setImage(null);
-            formRef.current?.reset();
-            setMessage("Product saved. It will appear in the storefront when the catalog refreshes.");
+            let imageUrl = productDetails.image || "";
+
+            // Upload a new image only if a file was selected
+            if (imageFile) {
+                const formData = new FormData();
+                formData.append("product", imageFile);
+                const uploadData = await adminRequest("/upload", token, { method: "POST", body: formData });
+                imageUrl = uploadData.image_url;
+            }
+
+            if (!imageUrl && !isEditing) {
+                setError("Choose a product image.");
+                setIsSubmitting(false);
+                return;
+            }
+
+            if (isEditing && editingProductId) {
+                await adminRequest(`/addproduct/${editingProductId}`, token, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...productDetails, image: imageUrl }),
+                });
+                setMessage("Product updated successfully.");
+                onEditComplete?.();
+            } else {
+                await adminRequest("/addproduct", token, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ ...productDetails, image: imageUrl }),
+                });
+                setProductDetails(emptyProduct);
+                setImageFile(null);
+                setImage(null);
+                formRef.current?.reset();
+                setMessage("Product saved. It will appear in the storefront when the catalog refreshes.");
+            }
         } catch (requestError) {
-            setError(requestError instanceof Error ? requestError.message : "Unable to add this product.");
+            setError(requestError instanceof Error ? requestError.message : "Unable to save this product.");
         } finally {
             setIsSubmitting(false);
         }
@@ -155,6 +207,7 @@ const AddProduct = ({ token }) => {
                 <option value="fitness">Fitness</option>
             </select>
             {cjError && <p className="admin-form-error" role="alert">{cjError}</p>}
+            {cjMessage && <p className="admin-form-success" role="status">{cjMessage}</p>}
             {!!cjProducts.length && (
                 <div className="cj-results">
                     {cjProducts.map((product) => (
@@ -203,7 +256,15 @@ const AddProduct = ({ token }) => {
                                     onChange={(event) => setCjPrices((current) => ({ ...current, [product.id]: event.target.value }))}
                                     required
                                 />
-                                <button type="button" onClick={() => importCJProduct(product)}>Add to store</button>
+                                <button
+                                    type="button"
+                                    onClick={() => importCJProduct(product)}
+                                    disabled={importingCJProduct === product.id
+                                        || !cjSelectedVariants[product.id]
+                                        || !(Number(cjPrices[product.id]) > 0)}
+                                >
+                                    {importingCJProduct === product.id ? "Adding..." : "Add to store"}
+                                </button>
                             </div>
                         </article>
                     ))}
@@ -243,13 +304,22 @@ const AddProduct = ({ token }) => {
 
             <div className="addproduct-itemfield">
                 <label htmlFor="file-input">Product image
-                    <img src={image ? URL.createObjectURL(image) : upload_area} className="addproduct-thumbnail-img" alt={image ? image.name : "Choose an image"} />
+                    {isEditing && productDetails.image ? (
+                        <img src={productDetails.image} className="addproduct-thumbnail-img" alt={productDetails.name} />
+                    ) : (
+                        <img src={imageFile ? URL.createObjectURL(imageFile) : upload_area} className="addproduct-thumbnail-img" alt={imageFile ? imageFile.name : "Choose an image"} />
+                    )}
                 </label>
-                <input onChange={(event) => setImage(event.target.files?.[0] || null)} type="file" name="image" id="file-input" accept="image/jpeg,image/png,image/webp,image/gif" required />
+                <input onChange={(event) => setImageFile(event.target.files?.[0] || null)} type="file" name="image" id="file-input" accept="image/jpeg,image/png,image/webp,image/gif" />
             </div>
             {error && <p className="admin-form-error" role="alert">{error}</p>}
             {message && <p className="admin-form-success" role="status">{message}</p>}
-            <button type="submit" className="addproduct-btn" disabled={isSubmitting}>{isSubmitting ? "Saving..." : "Add product"}</button>
+            {error && error.errors && (
+                <div className="addproduct-field-errors">
+                    {error.errors.map((msg, i) => <p key={i} style={{ color: '#a32121', fontSize: '13px', margin: '4px 0 0 0' }}>• {msg}</p>)}
+                </div>
+            )}
+            <button type="submit" className="addproduct-btn" disabled={isSubmitting}>{isSubmitting ? "Saving..." : (isEditing ? "Update product" : "Add product")}</button>
         </form>
         </div>
     )
@@ -259,4 +329,13 @@ export default AddProduct;
 
 AddProduct.propTypes = {
     token: PropTypes.string.isRequired,
+    editingProduct: PropTypes.shape({
+        id: PropTypes.string,
+        name: PropTypes.string,
+        category: PropTypes.string,
+        new_price: PropTypes.number,
+        old_price: PropTypes.number,
+        image: PropTypes.string,
+    }),
+    onEditComplete: PropTypes.func,
 };
